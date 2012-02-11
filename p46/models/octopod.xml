@@ -1,0 +1,13 @@
+<rules max_depth="20">
+    <rule name="entry" weight="1">
+        <call count="300" transforms="ry 3.6" rule="arm"/>
+    </rule>
+    <rule name="arm" weight="1">
+        <call count="1" transforms="sa 0.9 rz 6 tx 1" rule="arm"/>
+        <instance count="1" transforms="s 1 0.2 0.5" shape="box"/>
+    </rule>
+    <rule name="arm" weight="1">
+        <call count="1" transforms="sa 0.9 rz -6 tx 1" rule="arm"/>
+        <instance count="1" transforms="s 1 0.2 0.5" shape="box"/>
+    </rule>
+</rules>

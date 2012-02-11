@@ -1,0 +1,55 @@
+digraph Fluid {
+
+    node [shape=box,style=bold,fillcolor=lightgray,color=black,fontname=Helvetica];
+    Velocity;
+    Obstacles;
+    Density;
+    Temperature;
+    
+    node [fillcolor=cyan,style=filled];
+    
+    node [label="Advect",shape=diamond];
+    AdvectVelocity;
+    AdvectDensity;
+    AdvectTemperature;
+    
+    node [label="Apply Impulse",shape=ellipse,fillcolor=green];
+    ImpulseDensity;
+    ImpulseTemperature;
+    
+    node [label="Apply Buoyancy",fillcolor=cyan];
+    Buoyancy;
+
+    node [label="Compute Divergence"];
+    Divergence;
+    
+    node [label="Jacobi Iteration"];
+    Jacobi;
+    
+    node [label="Subtract Gradient"];
+    Subtract;
+    
+    node [label="",shape=point,color=white,fillcolor=white,color=white];
+    Junction;
+
+    // Edges
+    
+    Subtract -> Velocity;
+    ImpulseDensity -> Density;
+    ImpulseTemperature -> Temperature;
+
+    Velocity -> AdvectVelocity -> Buoyancy -> Divergence -> Jacobi -> Subtract;
+    Density -> AdvectDensity -> ImpulseDensity;
+    Temperature -> AdvectTemperature -> ImpulseTemperature;
+    ImpulseDensity -> Buoyancy;
+    ImpulseTemperature -> Buoyancy;
+    Buoyancy -> Subtract;
+    
+    Obstacles -> Divergence;
+    Obstacles -> Jacobi;
+    Obstacles -> Subtract;
+    
+    edge [label="*"];
+    Jacobi -> Jacobi;
+
+}

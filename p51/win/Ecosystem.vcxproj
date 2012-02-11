@@ -1,0 +1,109 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|Win32">
+      <Configuration>Debug</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|Win32">
+      <Configuration>Release</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="..\lib\glew\glew.c" />
+    <ClCompile Include="..\lib\glsw\bstrlib.c" />
+    <ClCompile Include="..\lib\glsw\glsw.c" />
+    <ClCompile Include="..\lib\liblzma\Alloc.c" />
+    <ClCompile Include="..\lib\liblzma\LzFind.c" />
+    <ClCompile Include="..\lib\liblzma\LzmaDec.c" />
+    <ClCompile Include="..\lib\liblzma\LzmaEnc.c" />
+    <ClCompile Include="..\lib\liblzma\LzmaLib.c" />
+    <ClCompile Include="..\lib\openctm\compressMG1.c" />
+    <ClCompile Include="..\lib\openctm\compressMG2.c" />
+    <ClCompile Include="..\lib\openctm\compressRAW.c" />
+    <ClCompile Include="..\lib\openctm\openctm.c" />
+    <ClCompile Include="..\lib\openctm\stream.c" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="..\lib\glew\glew.h" />
+    <ClInclude Include="..\lib\glew\glxew.h" />
+    <ClInclude Include="..\lib\glew\wglew.h" />
+    <ClInclude Include="..\lib\glsw\bstrlib.h" />
+    <ClInclude Include="..\lib\glsw\glsw.h" />
+    <ClInclude Include="..\lib\liblzma\Alloc.h" />
+    <ClInclude Include="..\lib\liblzma\LzFind.h" />
+    <ClInclude Include="..\lib\liblzma\LzHash.h" />
+    <ClInclude Include="..\lib\liblzma\LzmaDec.h" />
+    <ClInclude Include="..\lib\liblzma\LzmaEnc.h" />
+    <ClInclude Include="..\lib\liblzma\LzmaLib.h" />
+    <ClInclude Include="..\lib\liblzma\NameMangle.h" />
+    <ClInclude Include="..\lib\liblzma\Types.h" />
+    <ClInclude Include="..\lib\openctm\internal.h" />
+    <ClInclude Include="..\lib\openctm\openctm.h" />
+    <ClInclude Include="..\lib\openctm\openctmpp.h" />
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <ProjectGuid>{4398964E-6134-481C-AC32-30826607A348}</ProjectGuid>
+    <Keyword>Win32Proj</Keyword>
+    <RootNamespace>Ecosystem</RootNamespace>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
+    <ConfigurationType>StaticLibrary</ConfigurationType>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <CharacterSet>NotSet</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="Configuration">
+    <ConfigurationType>StaticLibrary</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+    <CharacterSet>NotSet</CharacterSet>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Label="ExtensionSettings">
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <PropertyGroup Label="UserMacros" />
+  <PropertyGroup />
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+    <ClCompile>
+      <PrecompiledHeader>
+      </PrecompiledHeader>
+      <WarningLevel>Level3</WarningLevel>
+      <Optimization>Disabled</Optimization>
+      <PreprocessorDefinitions>GLEW_STATIC;OPENCTM_STATIC;WIN32;_DEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>../lib/liblzma;../lib/glew</AdditionalIncludeDirectories>
+    </ClCompile>
+    <Link>
+      <SubSystem>Windows</SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <PrecompiledHeader>
+      </PrecompiledHeader>
+      <Optimization>MaxSpeed</Optimization>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <PreprocessorDefinitions>GLEW_STATIC;OPENCTM_STATIC;WIN32;NDEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>../lib/liblzma;../lib/glew</AdditionalIncludeDirectories>
+    </ClCompile>
+    <Link>
+      <SubSystem>Windows</SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <OptimizeReferences>true</OptimizeReferences>
+    </Link>
+  </ItemDefinitionGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ImportGroup Label="ExtensionTargets">
+  </ImportGroup>
+</Project>

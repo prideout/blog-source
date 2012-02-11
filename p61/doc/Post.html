@@ -1,0 +1,327 @@
+<a href="http://prideout.net/blog/p61/Hilbert.png" class="floatbox" title="Hilbert Cubed Sphere"><img src="http://prideout.net/blog/p61/MediumHilbert.png" alt="Hilbert Cubed Sphere" style="margin-left:10px;margin-bottom:5px;border:0;" class="alignright size-medium wp-image-12" /></a>
+
+With <i>Tron: Legacy</i> hitting theaters, I thought it'd be fun to write a post on volumetric line strips.  They come in handy for a variety of effects (lightsabers, lightning, particle traces, etc.).  In many cases, you can render volumetric lines by drawing thin lines into an offscreen surface, then blurring the entire surface.  However, in some cases, screen-space blur won't work out for you.  Maybe you're fill-rate bound, or maybe you need immediate depth-testing.  You'd prefer a single-pass solution, and you want your volumetric lines to look great even when the lines are aligned to the viewing direction.
+
+Geometry shaders to the rescue!  By having the geometry shader emit a cuboid for each line segment, the fragment shader can perform a variety of effects within the screen-space region defined by the projected cuboid.  This includes Gaussian splatting, alpha texturing, or even simple raytracing of cylinders or capsules.  I stole the general idea from <a href="http://sebastien.hillaire.free.fr/demos/volumelines2/vline2.htm">S&eacute;bastien Hillaire</a>.
+
+<img src="http://prideout.net/blog/p61/prismoids.png" alt="Prismoids" style="border:0;margin-left:15px;margin-bottom:5px;" class="alignright size-medium wp-image-12" />
+
+You can apply this technique to line strip primitives with or without adjacency.  If you include adjacency, your geometry shader can chamfer the ends of the cuboid, turning the cuboid into a general prismoid and creating a tighter screen-space region.
+
+I hate bloating vertex buffers with adjacency information.  However, with <b>GL_LINE_STRIP_ADJACENCY</b>, adjacency incurs very little cost: simply add an extra vert to the beginning and end of your vertex buffer and you're done!  For more on adjacency, see my post on silhouettes or <a href="http://virtualglobeandterrainrendering.blogspot.com/2010/07/geometry-shader-silhouettes-without.html">this interesting post</a> on avoiding adjacency for terrain silhouettes.
+
+For line strips, you might want to use <b>GL_MAX</b> blending rather than simple additive blending.  This makes it easy to avoid extra glow at the joints.
+
+Here's a simplified version of the geometry shader, using old-school GLSL syntax to make Apple fans happy:
+
+[glsl]
+uniform mat4 ModelviewProjection;
+varying in vec3 vPosition[4]; // Four inputs since we're using GL_LINE_STRIP_ADJACENCY
+varying in vec3 vNormal[4];   // Orientation vectors are necessary for consistent alignment
+vec4 prismoid[8]; // Scratch space for the eight corners of the prismoid
+
+void emit(int a, int b, int c, int d)
+{
+    gl_Position = prismoid[a]; EmitVertex();
+    gl_Position = prismoid[b]; EmitVertex();
+    gl_Position = prismoid[c]; EmitVertex();
+    gl_Position = prismoid[d]; EmitVertex();
+    EndPrimitive();
+}
+
+void main()
+{
+    // Compute orientation vectors for the two connecting faces:
+    vec3 p0, p1, p2, p3;
+    p0 = vPosition[0]; p1 = vPosition[1];
+    p2 = vPosition[2]; p3 = vPosition[3];
+    vec3 n0 = normalize(p1-p0);
+    vec3 n1 = normalize(p2-p1);
+    vec3 n2 = normalize(p3-p2);
+    vec3 u = normalize(n0+n1);
+    vec3 v = normalize(n1+n2);
+
+    // Declare scratch variables for basis vectors:
+    vec3 i,j,k; float r = Radius;
+
+    // Compute face 1 of 2:
+    j = u; i = vNormal[1]; k = cross(i, j); i *= r; k *= r;
+    prismoid[0] = ModelviewProjection * vec4(p1 + i + k, 1);
+    prismoid[1] = ModelviewProjection * vec4(p1 + i - k, 1);
+    prismoid[2] = ModelviewProjection * vec4(p1 - i - k, 1);
+    prismoid[3] = ModelviewProjection * vec4(p1 - i + k, 1);
+
+    // Compute face 2 of 2:
+    j = v; i = vNormal[2]; k = cross(i, j); i *= r; k *= r;
+    prismoid[4] = ModelviewProjection * vec4(p2 + i + k, 1);
+    prismoid[5] = ModelviewProjection * vec4(p2 + i - k, 1);
+    prismoid[6] = ModelviewProjection * vec4(p2 - i - k, 1);
+    prismoid[7] = ModelviewProjection * vec4(p2 - i + k, 1);
+
+    // Emit the six faces of the prismoid:
+    emit(0,1,3,2); emit(5,4,6,7);
+    emit(4,5,0,1); emit(3,2,7,6);
+    emit(0,3,4,7); emit(2,1,6,5);
+}
+[/glsl]
+
+<h2 id="glow">Glow With Point-Line Distance</h2>
+
+<a href="http://prideout.net/blog/p61/Glow.png" class="floatbox" title="Tron Glow"><img src="http://prideout.net/blog/p61/MediumGlow.png" alt="Tron Glow" style="border:0;margin-left:15px;margin-top:5px;" class="alignright size-medium wp-image-12" /></a>
+
+Here's my fragment shader for Tron-like glow.  For this to link properly, the geometry shader needs to output some screen-space coordinates for the nodes in the line strip (<b>gEndpoints[2]</b> and <b>gPosition</b>).  The fragment shader simply computes a point-line distance, using the result for the pixel's intensity.  It's actually computing distance as "point-to-segment" rather than "point-to-infinite-line".  If you prefer the latter, you might be able to make an optimization by moving the distance computation up into the geometry shader.
+
+
+[glsl]
+uniform vec4 Color;
+
+varying vec2 gEndpoints[2];
+varying vec2 gPosition;
+
+uniform float Radius;
+uniform mat4 Projection;
+
+// Return distance from point 'p' to line segment 'a b':
+float line_distance(vec2 p, vec2 a, vec2 b)
+{
+    float dist = distance(a,b);
+    vec2 v = normalize(b-a);
+    float t = dot(v,p-a);
+    vec2 spinePoint;
+    if (t > dist) spinePoint = b;
+    else if (t > 0.0) spinePoint = a + t*v;
+    else spinePoint = a;
+    return distance(p,spinePoint);
+}
+
+void main()
+{
+    float d = line_distance(gPosition, gEndpoints[0], gEndpoints[1]);
+    gl_FragColor = vec4(vec3(1.0 - 12.0 * d), 1.0);
+}
+[/glsl]
+
+<h2 id="raytraced">Raytraced Cylindrical Imposters</h2>
+
+<a href="http://prideout.net/blog/p61/Tube.png" class="floatbox" title="Raytraced Tubes"><img src="http://prideout.net/blog/p61/MediumTube.png" alt="Raytraced Tubes" style="border:0;margin-left:15px;margin-top:5px;" class="alignright size-medium wp-image-12" /></a>
+
+I'm not sure how useful this is, but you can actually go a step further and perform a ray-cylinder intersection test in your fragment shader and use the surface normal to perform lighting.  The result: triangle-free tubes!  By writing to the <b>gl_FragDepth</b> variable, you can enable depth-testing, and your tubes integrate into the scene like magic; no tessellation required.  Here's an excerpt from my fragment shader.  (For the full shader, download the source code at the end of the article.)
+
+[glsl]
+vec3 perp(vec3 v)
+{
+    vec3 b = cross(v, vec3(0, 0, 1));
+    if (dot(b, b) < 0.01)
+        b = cross(v, vec3(0, 1, 0));
+    return b;
+}
+
+bool IntersectCylinder(vec3 origin, vec3 dir, out float t)
+{
+    vec3 A = gEndpoints[1]; vec3 B = gEndpoints[2];
+    float Epsilon = 0.0000001;
+    float extent = distance(A, B);
+    vec3 W = (B - A) / extent;
+    vec3 U = perp(W);
+    vec3 V = cross(U, W);
+    U = normalize(cross(V, W));
+    V = normalize(V);
+    float rSqr = Radius*Radius;
+    vec3 diff = origin - 0.5 * (A + B);
+    mat3 basis = mat3(U, V, W);
+    vec3 P = diff * basis;
+    float dz = dot(W, dir);
+    if (abs(dz) >= 1.0 - Epsilon) {
+        float radialSqrDist = rSqr - P.x*P.x - P.y*P.y;
+        if (radialSqrDist < 0.0)
+            return false;
+        t = (dz > 0.0 ? -P.z : P.z) + extent * 0.5;
+        return true;
+    }
+
+    vec3 D = vec3(dot(U, dir), dot(V, dir), dz);
+    float a0 = P.x*P.x + P.y*P.y - rSqr;
+    float a1 = P.x*D.x + P.y*D.y;
+    float a2 = D.x*D.x + D.y*D.y;
+    float discr = a1*a1 - a0*a2;
+    if (discr < 0.0)
+        return false;
+
+    if (discr > Epsilon) {
+        float root = sqrt(discr);
+        float inv = 1.0/a2;
+        t = (-a1 + root)*inv;
+        return true;
+    }
+
+    t = -a1/a2;
+    return true;
+}
+[/glsl]
+
+<h2 id="billboards">Motion-Blurred Billboards</h2>
+
+<img src="http://prideout.net/blog/p61/Billboards.png" alt="Motion-Blurred Billboards" style="border:0;margin-left:10px;margin-top:5px;" class="alignright size-medium wp-image-12" />
+
+Emitting cuboids from the geometry shader are great fun, but they're overkill for many tasks.  If you want to render short particle traces, it's easier just to emit a quad from your geometry shader.  The quad can be oriented and stretched according to the screen-space projection of the particle's velocity vector.  The tricky part is handling degenerate conditions: velocity might be close to zero, or velocity might be Z-aligned.
+
+One technique to deal with this is to interpolate the emitted quad between a vertically-aligned square and a velocity-aligned rectangle, and basing the lerping factor on the magnitude of the velocity vector projected into screen-space.
+
+Here's the full geometry shader and fragment shader for motion-blurred particles.  The geometry shader receives two endpoints of a line segment as input, and uses these to determine velocity.
+
+[glsl]
+-- Geometry Shader
+
+varying in vec3 vPosition[2];
+varying out vec2 gCoord;
+
+uniform mat4 ModelviewProjection;
+uniform float Radius;
+uniform mat3 Modelview;
+uniform mat4 Projection;
+uniform float Time;
+
+float Epsilon = 0.001;
+
+void main()
+{
+    vec3 p = mix(vPosition[0], vPosition[1], Time);
+    float w = Radius * 0.5;
+    float h = w * 2.0;
+    vec3 u = Modelview * (vPosition[1] - vPosition[0]);
+
+    // Determine 't', which represents Z-aligned magnitude.
+    // By default, t = 0.0.
+    // If velocity aligns with Z, increase t towards 1.0.
+    // If total speed is negligible, increase t towards 1.0.
+    float t = 0.0;
+    float nz = abs(normalize(u).z);
+    if (nz > 1.0 - Epsilon)
+        t = (nz - (1.0 - Epsilon)) / Epsilon;
+    else if (dot(u,u) < Epsilon)
+        t = (Epsilon - dot(u,u)) / Epsilon;
+
+    // Compute screen-space velocity:
+    u.z = 0.0;
+    u = normalize(u);
+
+    // Lerp the orientation vector if screen-space velocity is negligible:
+    u = normalize(mix(u, vec3(1,0,0), t));
+    h = mix(h, w, t);
+
+    // Compute the change-of-basis matrix for the billboard:
+    vec3 v = vec3(-u.y, u.x, 0);
+    vec3 a = u * Modelview;
+    vec3 b = v * Modelview;
+    vec3 c = cross(a, b);
+    mat3 basis = mat3(a, b, c);
+
+    // Compute the four offset vectors:
+    vec3 N = basis * vec3(0,w,0);
+    vec3 S = basis * vec3(0,-w,0);
+    vec3 E = basis * vec3(-h,0,0);
+    vec3 W = basis * vec3(h,0,0);
+
+    // Emit the quad:
+    gCoord = vec2(1,1); gl_Position = ModelviewProjection * vec4(p+N+E,1); EmitVertex();
+    gCoord = vec2(-1,1); gl_Position = ModelviewProjection * vec4(p+N+W,1); EmitVertex();
+    gCoord = vec2(1,-1); gl_Position = ModelviewProjection * vec4(p+S+E,1); EmitVertex();
+    gCoord = vec2(-1,-1); gl_Position = ModelviewProjection * vec4(p+S+W,1); EmitVertex();
+    EndPrimitive();
+}
+
+-- Fragment Shader
+
+varying vec2 gCoord;
+
+void main()
+{
+    float r2 = dot(gCoord, gCoord);
+    float d = exp(r2 * -1.2); // Gaussian Splat
+    gl_FragColor = vec4(vec3(d), 1.0);
+}
+[/glsl]
+
+<h2 id="hilbert">Diversion: Hilbert Cubed Sphere</h2>
+
+You might've noticed the interesting path that I've used for my examples.  This is a <a href="http://en.wikipedia.org/wiki/Hilbert_curve">Hilbert curve</a> drawn on the surface of a cube, with the cube deformed into a sphere.  If you think of a Hilbert curve as a parametric function from <b>R</b><sup>1</sup> to <b>R</b><sup>2</sup>, then any two points that are reasonably close in <b>R</b><sup>1</sup> are also reasonably close in <b>R</b><sup>2</sup>.  Cool huh?  Here's some C++ code for how I constructed the vertex buffer for the Hilbert cube:
+
+[cpp]
+struct Turtle {
+    void Move(float dx, float dy, bool changeFace = false) {
+        if (changeFace) ++Face;
+        switch (Face) {
+            case 0: P += Vector3(dx, dy, 0); break;
+            case 1: P += Vector3(0, dy, dx); break;
+            case 2: P += Vector3(-dy, 0, dx); break;
+            case 3: P += Vector3(0, -dy, dx); break;
+            case 4: P += Vector3(dy, 0, dx); break;
+            case 5: P += Vector3(dy, dx, 0); break;
+        }
+        HilbertPath.push_back(P);
+    }
+    Point3 P;
+    int Face;
+};
+
+static void HilbertU(int level)
+{
+    if (level == 0) return;
+    HilbertD(level-1);      HilbertTurtle.Move(0, -dist);
+    HilbertU(level-1);      HilbertTurtle.Move(dist, 0);
+    HilbertU(level-1);      HilbertTurtle.Move(0, dist);
+    HilbertC(level-1);
+}
+ 
+static void HilbertD(int level)
+{
+    if (level == 0) return;
+    HilbertU(level-1);      HilbertTurtle.Move(dist, 0);
+    HilbertD(level-1);      HilbertTurtle.Move(0, -dist);
+    HilbertD(level-1);      HilbertTurtle.Move(-dist, 0);
+    HilbertA(level-1);
+}
+ 
+static void HilbertC(int level)
+{
+    if (level == 0) return;
+    HilbertA(level-1);      HilbertTurtle.Move(-dist, 0);
+    HilbertC(level-1);      HilbertTurtle.Move(0, dist);
+    HilbertC(level-1);      HilbertTurtle.Move(dist, 0);
+    HilbertU(level-1);
+}
+ 
+static void HilbertA(int level)
+{
+    if (level == 0) return;
+    HilbertC(level-1);      HilbertTurtle.Move(0, dist);
+    HilbertA(level-1);      HilbertTurtle.Move(-dist, 0);
+    HilbertA(level-1);      HilbertTurtle.Move(0, -dist);
+    HilbertD(level-1);
+}
+
+void CreateHilbertCube(int lod)
+{
+    HilbertU(lod); HilbertTurtle.Move(dist, 0, true);
+    HilbertU(lod); HilbertTurtle.Move(0, dist, true);
+    HilbertC(lod); HilbertTurtle.Move(0, dist, true);
+    HilbertC(lod); HilbertTurtle.Move(0, dist, true);
+    HilbertC(lod); HilbertTurtle.Move(dist, 0, true);
+    HilbertD(lod);
+}
+[/cpp]
+
+Deforming the cube into a sphere is easy: just normalize the positions!
+
+<h2>Downloads</h2>
+
+I tested the code on Mac OS X and on Windows.  It uses <a href="http://www.cmake.org/">CMake</a> for the build system, and I consider the code to be on the public domain.  A video of the app is embedded at the bottom of this page.  Enjoy!
+
+<ul>
+<li><a href="http://prideout.net/blog/p61/Tron.zip">Tron.zip</a></li>
+<li><a href="http://prideout.net/blog/p61/Curve.cpp">Curve.cpp</a></li>
+<li><a href="http://prideout.net/blog/p61/Glow.glsl">Glow.glsl</a></li>
+<li><a href="http://prideout.net/blog/p61/Cylinder.glsl">Cylinder.glsl</a></li>
+</ul>
+ 
+<iframe src="http://player.vimeo.com/video/18311232?title=0&amp;byline=0&amp;portrait=0&amp;autoplay=0&amp;loop=0" width="400" height="400" frameborder="0"></iframe>

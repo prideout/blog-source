@@ -1,0 +1,348 @@
+<div id="easy_contents" class="easysmallcontents" >
+<ol>
+<li><a href="#review">Reviewing Geometry Shaders</a></li>
+<li><a href="#stages">The New OpenGL 4.0+ Pipeline</a></li>
+<li><a href="#levels">Inner and Outer Tess Levels</a></li>
+<li><a href="#shaders">Show Me The Code</a></li>
+<li><a href="#gs">Geometry Shaders Are Still Fun!</a></li>
+<li><a href="#downloads">Downloads</a></li>
+</ol>
+</div>
+
+This is the first of a two-part article on tessellation shaders with OpenGL 4.0+.  This entry gives an overview of tessellation and walks through an example of simple triangle subdivision; in the <a href="http://prideout.net/blog/?p=49">next entry</a>, we'll focus on quad subdivision.
+
+<h2 id="review">Reviewing Geometry Shaders</h2>
+
+When Geometry Shaders (GS) first came out, we were all excited because we could finally write a shader that could ``see'' all the verts in a triangle at once.  And finally, the GPU could produce more primitives than it consumed.
+
+<img src="http://prideout.net/blog/p48/Geodesic.gif" alt="Sphere Tessellation" class="alignright size-medium wp-image-12" />
+
+The GS unit turned out to be convenient for certain effects, but overall it was somewhat disappointing.  It was not designed for large-scale amplification of vertex data.  The GS processing for a single primitive was initially limited to a single processing unit.  Most GS programs had a serial loop that simply pushed out the verts of the new primitive(s), one vertex after another.  They didn't do a great job of leveraging the massive parallelism in GPUs.  Nowadays you can do a bit better by specifying an <b>invocations</b> count at the top of your GS, like so:
+
+[glsl]
+layout(triangles, invocations = 3) in;
+[/glsl]
+
+This tells the GPU that your GS should run three times on a single primitive.  You can figure out which vert you're on by looking at the built-in <b>gl_InvocationID</b> variable.
+
+<h2 id="stages">The New OpenGL 4.0+ Pipeline</h2>
+
+Although adding multiple GS invocations was helpful, performing highly-efficient subdivision demanded brand new stages in the pipeline.  Now is the time for the obligatory diagram: (I used a red pen for the stages that are new to OpenGL 4.0)
+
+<img src="http://prideout.net/blog/p48/ShaderStages.png" alt="Shader Stages" />
+
+So, we now have two additional programmable stages at our disposal: <b>Tessellation Control</b> and <b>Tessellation Evaluation</b>.  They both execute on a per-vertex basis, so their programs typically don't have serial loops like the old-fashioned geometry programs did.  However, much like geometry shaders, they can ``see'' all the verts in a single primitive.
+
+To work with tessellation shaders, OpenGL now has a new primitive type: <b>GL_PATCHES</b>.  Unlike <b>GL_TRIANGLES</b> (where every 3 verts spawns a triangle) or <b>GL_TRIANGLE_STRIP</b> (where every 1 vert spawns a new triangle), the number of verts in a patch is configurable:
+
+[cpp]
+glPatchParameteri(GL_PATCH_VERTICES, 16);       // tell OpenGL that every patch has 16 verts
+glDrawArrays(GL_PATCHES, firstVert, vertCount); // draw a bunch of patches
+[/cpp]
+
+The Tessellation Control (TC) shader is kinda like a Vertex Shader (VS) with super-vision.  Much like a VS program, each TC program transforms only one vertex, and the number of execution instances is the same as the number of verts in your OpenGL draw call.  The Tessellation Evaluation (TE) shader, however, usually processes <i>more</i> verts than you sent down in your draw call.  That's because the ``Tessellator'' (the stage between the two new shaders) generates brand new verts by interpolating between the existing verts.
+
+As the name implies, the TC shader has some control over how the Tessellator generates new verts.  This is done through the <b>gl_TessLevelInner</b> and <b>gl_TessLevelOuter</b> output variables.  More on these later.
+
+Another way of controlling how the Tessellator generates verts is through the <b>layout</b> qualifier on the TE shader's inputs.  You'll often see a TE shader with something like this at the top:
+
+[glsl]
+layout(triangles, equal_spacing, cw) in;
+[/glsl]
+
+This specifies three things: a <b>primitive mode</b>, a <b>vertex spacing</b>, and an <b>ordering</b>.  The latter two are optional and they have reasonable defaults -- I won't go into detail about them here.  As for the primitive mode, there are three choices: <b>triangles</b>, <b>quads</b>, and <b>isolines</b>.  As mentioned earlier, in this article I'll focus on triangles; for more on quads, see <a href="http://prideout.net/blog/?p=49">my next article</a>.
+
+<h2 id="levels">Inner and Outer Tess Levels</h2>
+
+Simply put, the inner tessellation level controls the number of ``nested'' primitives, and the outer tessellation level controls the number of times to subdivide each edge.  The <b>gl_TessLevelInner</b> and <b>gl_TessLevelOuter</b> variable are both arrays-of-float, but with triangle subdivision, there's only one element in the inner array.  The outer array has three elements, one for each side of the triangle.  In both arrays, a value of 1 indicates no subdivision whatsoever.  For the inner tess level, a value of 2 means that there's only one nested triangle, but it's degenerate; it's just a single point.  It's not till tess level 3 that you see a miniatured of the original triangle inside the original triangle.
+
+Since the tess levels are controlled at the shader level (as opposed to the OpenGL API level), you can do awesome things with dynamic level-of-detail.  However, for demonstration purposes, we'll limit ourselves to the simple case here.  We'll set the inner tess level to a hardcoded value, regardless of distance-from-camera.  For the outer tess level, we'll set all three edges to the same value.  Here's a little diagram that shows how triangle-to-triangle subdivision can be configured with our demo program, which sends an icosahedron to OpenGL:
+
+<table>
+
+<tr>
+<td></td>
+<td>Inner = 1</td>
+<td>Inner = 2</td>
+<td>Inner = 3</td>
+<td>Inner = 4</td>
+</tr>
+
+<tr>
+<td>Outer = 1</td>
+<td><a href="http://prideout.net/blog/p48/Inner1-Outer1.png" class="floatbox" title="Inner=1, Outer=1"><img src="http://prideout.net/blog/p48/Inner1-Outer1-Thumb.png" alt="" /></td>
+<td><a href="http://prideout.net/blog/p48/Inner2-Outer1.png" class="floatbox" title="Inner=2, Outer=1"><img src="http://prideout.net/blog/p48/Inner2-Outer1-Thumb.png" alt="" /></td>
+<td><a href="http://prideout.net/blog/p48/Inner3-Outer1.png" class="floatbox" title="Inner=3, Outer=1"><img src="http://prideout.net/blog/p48/Inner3-Outer1-Thumb.png" alt="" /></td>
+<td><a href="http://prideout.net/blog/p48/Inner4-Outer1.png" class="floatbox" title="Inner=4, Outer=1"><img src="http://prideout.net/blog/p48/Inner4-Outer1-Thumb.png" alt="" /></a></td>
+</tr>
+
+<tr>
+<td>Outer = 2</td>
+<td><a href="http://prideout.net/blog/p48/Inner1-Outer2.png" class="floatbox" title="Inner=1, Outer=2"><img src="http://prideout.net/blog/p48/Inner1-Outer2-Thumb.png" alt="" /></td>
+<td><a href="http://prideout.net/blog/p48/Inner2-Outer2.png" class="floatbox" title="Inner=2, Outer=2"><img src="http://prideout.net/blog/p48/Inner2-Outer2-Thumb.png" alt="" /></td>
+<td><a href="http://prideout.net/blog/p48/Inner3-Outer2.png" class="floatbox" title="Inner=3, Outer=2"><img src="http://prideout.net/blog/p48/Inner3-Outer2-Thumb.png" alt="" /></td>
+<td><a href="http://prideout.net/blog/p48/Inner4-Outer2.png" class="floatbox" title="Inner=4, Outer=2"><img src="http://prideout.net/blog/p48/Inner4-Outer2-Thumb.png" alt="" /></a></td>
+</tr>
+
+<tr>
+<td>Outer = 3</td>
+<td><a href="http://prideout.net/blog/p48/Inner1-Outer3.png" class="floatbox" title="Inner=1, Outer=3"><img src="http://prideout.net/blog/p48/Inner1-Outer3-Thumb.png" alt="" /></td>
+<td><a href="http://prideout.net/blog/p48/Inner2-Outer3.png" class="floatbox" title="Inner=2, Outer=3"><img src="http://prideout.net/blog/p48/Inner2-Outer3-Thumb.png" alt="" /></td>
+<td><a href="http://prideout.net/blog/p48/Inner3-Outer3.png" class="floatbox" title="Inner=3, Outer=3"><img src="http://prideout.net/blog/p48/Inner3-Outer3-Thumb.png" alt="" /></td>
+<td><a href="http://prideout.net/blog/p48/Inner4-Outer3.png" class="floatbox" title="Inner=4, Outer=3"><img src="http://prideout.net/blog/p48/Inner4-Outer3-Thumb.png" alt="" /></a></td>
+</tr>
+
+<tr>
+<td>Outer = 4</td>
+<td><a href="http://prideout.net/blog/p48/Inner1-Outer4.png" class="floatbox" title="Inner=1, Outer=4"><img src="http://prideout.net/blog/p48/Inner1-Outer4-Thumb.png" alt="" /></td>
+<td><a href="http://prideout.net/blog/p48/Inner2-Outer4.png" class="floatbox" title="Inner=2, Outer=4"><img src="http://prideout.net/blog/p48/Inner2-Outer4-Thumb.png" alt="" /></td>
+<td><a href="http://prideout.net/blog/p48/Inner3-Outer4.png" class="floatbox" title="Inner=3, Outer=4"><img src="http://prideout.net/blog/p48/Inner3-Outer4-Thumb.png" alt="" /></td>
+<td><a href="http://prideout.net/blog/p48/Inner4-Outer4.png" class="floatbox" title="Inner=4, Outer=4"><img src="http://prideout.net/blog/p48/Inner4-Outer4-Thumb.png" alt="" /></a></td>
+</tr>
+
+</table>
+
+<br/>
+
+<h2 id="shaders">Show Me The Code</h2>
+
+Building the VAO for the icosahedron isn't the subject of this article, but for completeness here's the C code for doing so:
+
+[cpp]
+static void CreateIcosahedron()
+{
+    const int Faces[] = {
+        2, 1, 0,
+        3, 2, 0,
+        4, 3, 0,
+        5, 4, 0,
+        1, 5, 0,
+        11, 6,  7,
+        11, 7,  8,
+        11, 8,  9,
+        11, 9,  10,
+        11, 10, 6,
+        1, 2, 6,
+        2, 3, 7,
+        3, 4, 8,
+        4, 5, 9,
+        5, 1, 10,
+        2,  7, 6,
+        3,  8, 7,
+        4,  9, 8,
+        5, 10, 9,
+        1, 6, 10 };
+
+    const float Verts[] = {
+         0.000f,  0.000f,  1.000f,
+         0.894f,  0.000f,  0.447f,
+         0.276f,  0.851f,  0.447f,
+        -0.724f,  0.526f,  0.447f,
+        -0.724f, -0.526f,  0.447f,
+         0.276f, -0.851f,  0.447f,
+         0.724f,  0.526f, -0.447f,
+        -0.276f,  0.851f, -0.447f,
+        -0.894f,  0.000f, -0.447f,
+        -0.276f, -0.851f, -0.447f,
+         0.724f, -0.526f, -0.447f,
+         0.000f,  0.000f, -1.000f };
+
+    IndexCount = sizeof(Faces) / sizeof(Faces[0]);
+
+    // Create the VAO:
+    GLuint vao;
+    glGenVertexArrays(1, &vao);
+    glBindVertexArray(vao);
+
+    // Create the VBO for positions:
+    GLuint positions;
+    GLsizei stride = 3 * sizeof(float);
+    glGenBuffers(1, &positions);
+    glBindBuffer(GL_ARRAY_BUFFER, positions);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(Verts), Verts, GL_STATIC_DRAW);
+    glEnableVertexAttribArray(PositionSlot);
+    glVertexAttribPointer(PositionSlot, 3, GL_FLOAT, GL_FALSE, stride, 0);
+
+    // Create the VBO for indices:
+    GLuint indices;
+    glGenBuffers(1, &indices);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, indices);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(Faces), Faces, GL_STATIC_DRAW);
+}
+[/cpp]
+
+Our vertex shader is even more boring:
+
+[glsl]
+-- Vertex
+
+in vec4 Position;
+out vec3 vPosition;
+
+void main()
+{
+    vPosition = Position.xyz;
+}
+[/glsl]
+
+We use a special naming convention for in/out variables.  If we need to trickle <b>Foo</b> through the entire pipeline, here's how we avoid naming collisions:
+
+<ul>
+<li><b>Foo</b> is the original vertex attribute (sent from the CPU)</li>
+<li><b>vFoo</b> is the output of the VS and the input to the TC shader</li>
+<li><b>tcFoo</b> is the output of the TC shader and the input to the TE shader</li>
+<li><b>teFoo</b> is the output of the TE shader and the input to the GS</li>
+<li><b>gFoo</b> is the output of the GS and the input to the FS</li>
+</ul>
+
+Now, without further ado, we're ready to show off our tessellation control shader:
+
+[glsl]
+-- TessControl
+
+layout(vertices = 3) out;
+in vec3 vPosition[];
+out vec3 tcPosition[];
+uniform float TessLevelInner;
+uniform float TessLevelOuter;
+
+#define ID gl_InvocationID
+
+void main()
+{
+    tcPosition[ID] = vPosition[ID];
+    if (ID == 0) {
+        gl_TessLevelInner[0] = TessLevelInner;
+        gl_TessLevelOuter[0] = TessLevelOuter;
+        gl_TessLevelOuter[1] = TessLevelOuter;
+        gl_TessLevelOuter[2] = TessLevelOuter;
+    }
+}
+[/glsl]
+
+That's almost as boring as our vertex shader!  Note that per-patch outputs (such as <b>gl_TessLevelInner</b>) only need to be written once.  We enclose them in an <b>if</b> so that we only bother writing to them from a single execution thread.  Incidentally, you can create custom per-patch variables if you'd like; simply use the <b>patch out</b> qualifier when declaring them.
+
+Here's the tessellation control shader that we use for our icosahedron demo:
+
+[glsl]
+-- TessEval
+
+layout(triangles, equal_spacing, cw) in;
+in vec3 tcPosition[];
+out vec3 tePosition;
+out vec3 tePatchDistance;
+uniform mat4 Projection;
+uniform mat4 Modelview;
+
+void main()
+{
+    vec3 p0 = gl_TessCoord.x * tcPosition[0];
+    vec3 p1 = gl_TessCoord.y * tcPosition[1];
+    vec3 p2 = gl_TessCoord.z * tcPosition[2];
+    tePatchDistance = gl_TessCoord;
+    tePosition = normalize(p0 + p1 + p2);
+    gl_Position = Projection * Modelview * vec4(tePosition, 1);
+}
+[/glsl]
+
+The built-in <b>gl_TessCoord</b> variable lets us know where we are within the patch.  In this case, the primitive mode is <b>triangles</b>, so <b>gl_TessCoord</b> is a barycentric coordinate.  If we were performing quad subdivision, then it would be a UV coordinate and we'd ignore the Z component.
+
+Our demo subdivides the icosahedron in such a way that it approaches a perfect unit sphere, so we use <b>normalize</b> to push the new verts onto the sphere's surface.
+
+The <b>tePatchDistance</b> output variable will be used by the fragment shader to visualize the edges of the patch; this brings us to the next section.
+
+<h2 id="gs">Geometry Shaders Are Still Fun!</h2>
+
+Geometry shaders are now considered the runt of the litter, but sometimes they're useful for certain techniques, like computing facet normals on the fly, or creating a nice single-pass wireframe.  In this demo, we'll do both.  We're intentionally using non-smooth normals (in other words, the lighting is the same across the triangle) because it helps visualize the tessellation.
+
+For a brief overview on rendering nice wireframes with geometry shaders, check out <a href="http://portal.acm.org/citation.cfm?id=1180035">this SIGGRAPH sketch</a>.  To summarize, the GS needs to send out a vec3 "edge distance" at each corner; these automatically get interpolated by the rasterizer, which gives the fragment shader a way to determine how far the current pixel is from the nearest edge.
+
+We'll extend the wireframe technique here because we wish the pixel shader to highlight two types of edges differently.  The edge of the final triangle is drawn with a thin line, and the edge of the original patch is drawn with a thick line.
+
+[glsl]
+-- Geometry
+
+uniform mat4 Modelview;
+uniform mat3 NormalMatrix;
+layout(triangles) in;
+layout(triangle_strip, max_vertices = 3) out;
+in vec3 tePosition[3];
+in vec3 tePatchDistance[3];
+out vec3 gFacetNormal;
+out vec3 gPatchDistance;
+out vec3 gTriDistance;
+
+void main()
+{
+    vec3 A = tePosition[2] - tePosition[0];
+    vec3 B = tePosition[1] - tePosition[0];
+    gFacetNormal = NormalMatrix * normalize(cross(A, B));
+    
+    gPatchDistance = tePatchDistance[0];
+    gTriDistance = vec3(1, 0, 0);
+    gl_Position = gl_in[0].gl_Position; EmitVertex();
+
+    gPatchDistance = tePatchDistance[1];
+    gTriDistance = vec3(0, 1, 0);
+    gl_Position = gl_in[1].gl_Position; EmitVertex();
+
+    gPatchDistance = tePatchDistance[2];
+    gTriDistance = vec3(0, 0, 1);
+    gl_Position = gl_in[2].gl_Position; EmitVertex();
+
+    EndPrimitive();
+}
+[/glsl]
+
+As you can see, we used the classic one-at-a-time method in our GS, rather than specifying an <b>invocations</b> count other than 1.  This is fine for demo purposes.
+
+Our fragment shader does some per-pixel lighting (which is admittedly silly; the normal is the same across the triangle, so we should've performed lighting much earlier) and takes the minimum of all incoming distances to see if the current pixel lies near an edge.
+
+[glsl]
+out vec4 FragColor;
+in vec3 gFacetNormal;
+in vec3 gTriDistance;
+in vec3 gPatchDistance;
+in float gPrimitive;
+uniform vec3 LightPosition;
+uniform vec3 DiffuseMaterial;
+uniform vec3 AmbientMaterial;
+
+float amplify(float d, float scale, float offset)
+{
+    d = scale * d + offset;
+    d = clamp(d, 0, 1);
+    d = 1 - exp2(-2*d*d);
+    return d;
+}
+
+void main()
+{
+    vec3 N = normalize(gFacetNormal);
+    vec3 L = LightPosition;
+    float df = abs(dot(N, L));
+    vec3 color = AmbientMaterial + df * DiffuseMaterial;
+
+    float d1 = min(min(gTriDistance.x, gTriDistance.y), gTriDistance.z);
+    float d2 = min(min(gPatchDistance.x, gPatchDistance.y), gPatchDistance.z);
+    color = amplify(d1, 40, -0.5) * amplify(d2, 60, -0.5) * color;
+
+    FragColor = vec4(color, 1.0);
+}
+[/glsl]
+
+That completes the shader code for the demo, and we managed to specify code for all of the five shader stages in the modern GPU pipeline.  Here's the final output using a tessellation level of 4 for both inner and outer:
+
+<img src="http://prideout.net/blog/p48/FinalImage.png" alt="Sphere Tessellation" />
+
+<h2 id="downloads">Downloads</h2>
+
+The demo code uses a subset of the <a href="http://prideout.net/blog/?p=36">Pez ecosystem</a>, which is included in the zip below. (The Pez ecosystem is a handful of tiny libraries whose source is included directly in the project).
+
+<ul>
+<li><a href="http://prideout.net/blog/p48/TriangleTess.zip">TriangleTess.zip</a></li>
+<li><a href="http://prideout.net/blog/p48/Geodesic.c">Geodesic.c</a></li>
+<li><a href="http://prideout.net/blog/p48/Geodesic.glsl">Geodesic.glsl</a></li>
+</ul>
+
+I consider this code to be on the public domain.  To run it, you'll need <a href="http://www.cmake.org/cmake/resources/software.html">CMake</a>, a very up-to-date graphics driver, and a very modern graphics card.  Good luck!

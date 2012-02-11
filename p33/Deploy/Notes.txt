@@ -1,0 +1,36 @@
+Here’s how to add welding and normal removal to the converter that I posted on my blog.  Marcus’s compression algorithm does *not* auto-weld verts.
+
+ 
+
+Step 1
+
+Add this before the call to ExportCTM(…):
+
+ 
+
+    if (WeldVertices)
+    {
+        DWORD beforeVertCount = g_pMesh->GetNumVertices();
+        D3DXWeldVertices(g_pMesh, D3DXWELDEPSILONS_WELDALL, 0, 0, 0, 0, 0);
+        DWORD afterVertCount = g_pMesh->GetNumVertices();
+        cout << beforeVertexCount << “ -> “ << afterVertCount << “\n”;
+    }
+ 
+
+Step 2
+
+Find “CTMfloat* pCtmNormals = ” and add this afterwards:
+
+ 
+
+    if (RemoveNormals)
+    {
+        delete pCtmNormals;
+        pCtmNormals = 0;
+        normalsOffset = MISSING_ATTRIBUTE;
+    }
+ 
+
+ 
+
+ 

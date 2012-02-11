@@ -1,0 +1,681 @@
+<div id="easy_contents" class="easysmallcontents" >
+<ol>
+<li><a href="#clear">Tutorial 1: Simplest Possible Example</a></li>
+<li><a href="#triangle">Tutorial 2: Hello Triangle</a></li>
+<li><a href="#texture">Tutorial 3: Ghandi Texture</a></li>
+<li><a href="#mesh">Tutorial 4: Mesh Viewer</a></li>
+<li><a href="#ecosystem">Pez Ecosystem</a></li>
+<li><a href="#downloads">Downloads</a></li>
+</ol>
+</div>
+
+Pez enables cross-platform development of extremely simple OpenGL apps.  It's not really a library since it's so small.  Instead of linking it in, just plop one of these files into your project:
+
+<ul>
+<li><a href="http://prideout.net/blog/p36/pez.cocoa.m">pez.cocoa.m</a></li>
+<li><a href="http://prideout.net/blog/p36/pez.linux.c">pez.linux.c</a></li>
+<li><a href="http://prideout.net/blog/p36/pez.windows.c">pez.windows.c</a></li>
+</ul>
+
+You'll also need a single header file:
+
+<ul>
+<li><a href="http://prideout.net/blog/p36/pez.h">pez.h</a></li>
+</ul>
+
+Like GLUT, Pez lets you quickly build simple OpenGL apps that will run on any platform.  Unlike GLUT, it never makes any OpenGL calls on your behalf.  This makes it easy to write demos that conform to the forward-compatible profile in OpenGL 3.0+.
+
+Pez doesn't require you to register callbacks like GLUT does.  Instead, your program simply provides definitions for four functions:
+
+[cpp]
+// receive window size and return window title
+const char* PezInitialize(int width, int height);
+
+// draw scene (Pez swaps the backbuffer for you)
+void PezRender();
+
+// receive elapsed time (e.g., update physics)
+void PezUpdate(unsigned int milliseconds);
+
+// handle mouse action: PEZ_DOWN, PEZ_UP, or PEZ_MOVE
+void PezHandleMouse(int x, int y, int action);    
+[/cpp]
+
+That's it!  Pez defines <b>main()</b> (or <b>WinMain</b> on Microsoft platforms) and runs a game loop for you.  Additionally, Pez defines a handful of utility functions that serve as alternatives to printf, exceptions, and asserts:
+
+[cpp]
+void PezDebugString(const char* pStr, ...);
+void PezDebugStringW(const wchar_t* pStr, ...);
+void PezFatalError(const char* pStr, ...);
+void PezFatalErrorW(const wchar_t* pStr, ...);
+#define PezCheckCondition(A, B) if (!(A)) { PezFatalError(B); }
+#define PezCheckConditionW(A, B) if (!(A)) { PezFatalErrorW(B); }
+[/cpp]
+
+<img src="http://prideout.net/blog/p36/PezCostume.jpg" alt="Pez Uniform" style="border:none" class="alignright size-medium wp-image-12" />
+
+On Windows, strings get sent to the debugger, so use the VS debugger window or dbgview to see them.
+
+Pez doesn't handle keyboard stuff and resizable windows.  If you want to do anything fancy, just edit the Pez source and treat it as a starting point.  Pez is written in ANSI C and released under the MIT License.
+
+The only outside library that Pez depends on is <a href="http://glew.sourceforge.net/">GLEW</a>, which is also so tiny that you can plop it down directly into your project.  Usage of glew is especially nice on Windows platforms, since it lets you avoid including the huge <b>windows.h</b> header, and it loads up function pointers on your behalf.  Pez calls <b>glewInit()</b> for you.
+
+GLEW is included in the downloadable Pez package at the end of the post, along with a few other super-light libraries such as <a href="http://prideout.net/blog/?p=11">GLSW</a> and <a href="http://www.karlings.com/~danne/pnglite/">pnglite</a>.  Together, these libraries form the "Pez Ecosystem", which I'll discuss later.  You don't need to use the entire ecosystem to use Pez; GLEW is the only required library.
+
+You can configure some aspects of Pez (most importantly, window size) by editing <b>pez.h</b> and modifying one of these constants:
+
+[text]
+#define PEZ_VIEWPORT_WIDTH 853
+#define PEZ_VIEWPORT_HEIGHT 480
+#define PEZ_ENABLE_MULTISAMPLING 1
+#define PEZ_VERTICAL_SYNC 1
+[/text]
+
+<h2 id="clear">Simple Example</h2>
+
+Here's a little flashlight app that oscillates the background color and becomes bright yellow when pressing a mouse button.  Note that it includes <b>glew.h</b> rather than <b>gl.h</b>.
+
+[cpp]
+#include <pez.h>
+#include <glew.h>
+#include <math.h>
+
+static float elapsed = 0;
+static int pressing = 0;
+static float speed = 0.01f;
+
+const char* PezInitialize(int width, int height)
+{
+    return "Pez Intro";
+}
+
+void PezRender()
+{
+    if (pressing) {
+        glClearColor(1, 1, 0.75f, 1);
+    } else {
+        float blue = 0.5f * (1.0f + sinf(elapsed));
+        glClearColor(0, 0.25f, blue, 1);
+    }
+    glClear(GL_COLOR_BUFFER_BIT);
+}
+
+void PezUpdate(unsigned int elapsedMilliseconds)
+{
+    elapsed += elapsedMilliseconds * speed;
+}
+
+void PezHandleMouse(int x, int y, int action)
+{
+    if (action == PEZ_DOWN)
+        pressing = 1;
+    else if (action == PEZ_UP)
+        pressing = 0;
+}
+[/cpp]
+
+<h2 id="triangle">Hello Triangle</h2>
+
+Next let's try something a bit more complex:
+
+<img src="http://prideout.net/blog/p36/PezTriangle.png" alt="Pez Triangle" style="border:none" />
+
+Here are the source files for this demo:
+
+<ul class="hlist">
+<li><a href="http://prideout.net/blog/p36/PezIntro2.Triangle.c">PezIntro2.Triangle.c</a></li>
+<li><a href="http://prideout.net/blog/p36/Simple.glsl">Simple.glsl</a></li>
+</ul>
+
+Since we're using modern OpenGL, even a simple task like this requires the usage of shaders.  First let's write the effect file:
+
+[glsl]
+-- Vertex.GL3
+
+in vec2 Position;
+in vec3 InColor;
+out vec3 OutColor;
+
+void main()
+{
+    OutColor = InColor;
+    gl_Position = vec4(Position, 0, 1);
+}
+
+-- Fragment.GL3
+
+in vec3 OutColor;
+out vec4 FragColor;
+
+void main()
+{
+    FragColor = vec4(OutColor, 1);
+}
+[/glsl]
+
+The gray '&#45;&#45;' section dividers are not legal in the shading language, but they get parsed out by <a href="http://prideout.net/blog/?p=11">GLSW</a>.  Let's move on to the C code:
+
+[cpp]
+#include <pez.h>
+#include <glew.h>
+#include <glsw.h>
+
+static void BuildGeometry();
+static void LoadEffect();
+
+enum { PositionSlot, ColorSlot };
+
+void PezHandleMouse(int x, int y, int action) { }
+
+void PezUpdate(unsigned int elapsedMilliseconds) { }
+
+void PezRender()
+{
+    glClear(GL_COLOR_BUFFER_BIT);
+    glDrawArrays(GL_TRIANGLES, 0, 3);
+}
+
+const char* PezInitialize(int width, int height)
+{
+    BuildGeometry();
+    LoadEffect();
+    return "Pez Intro";
+}
+[/cpp]
+
+Note that I used a static qualifier on the forward declarations of <b>BuildGeometry()</b> and <b>LoadEffect()</b>; this emphasizes the fact that they're private to this file.
+
+Let's go ahead and implement <b>BuildGeometry()</b>, which creates a VBO for the triangle and enables a couple vertex attributes (position and color):
+
+[cpp]
+static void BuildGeometry()
+{
+    float verts[] = {
+        -0.5f, -0.5f,  1,1,0, // Yellow
+        +0.0f, +0.5f,  1,0,1, // Magenta
+        +0.5f, -0.5f,  0,1,1, // Cyan
+    };
+
+    GLuint vboHandle;
+    GLsizeiptr vboSize = sizeof(verts);
+    GLsizei stride = 5 * sizeof(float);
+    GLenum usage = GL_STATIC_DRAW;
+    GLvoid* colorOffset = (GLvoid*) (sizeof(float) * 2);
+
+    glGenBuffers(1, &vboHandle);
+    glBindBuffer(GL_ARRAY_BUFFER, vboHandle);
+    glBufferData(GL_ARRAY_BUFFER, vboSize, verts, usage);
+    glVertexAttribPointer(PositionSlot, 2, GL_FLOAT, GL_FALSE, stride, 0);
+    glVertexAttribPointer(ColorSlot, 3, GL_FLOAT, GL_FALSE, stride, colorOffset);
+    glEnableVertexAttribArray(PositionSlot);
+    glEnableVertexAttribArray(ColorSlot);
+}
+[/cpp]
+
+Next we'll write the code that fetches a pair of shaders from GLSW, compiles them, binds the color and position slots, and links them together to form a program object:
+
+[cpp]
+static void LoadEffect()
+{
+    const char* vsSource, * fsSource;
+    GLuint vsHandle, fsHandle;
+    GLint compileSuccess, linkSuccess;
+    GLchar compilerSpew[256];
+    GLuint programHandle;
+
+    glswInit();
+    glswSetPath("../demo/", ".glsl");
+    glswAddDirectiveToken("GL3", "#version 130");
+
+    vsSource = glswGetShader("Simple.Vertex." PEZ_GL_VERSION_TOKEN);
+    fsSource = glswGetShader("Simple.Fragment." PEZ_GL_VERSION_TOKEN);
+    PezCheckCondition(vsSource, "Can't find vertex shader.\n");
+    PezCheckCondition(fsSource, "Can't find fragment shader.\n");
+
+    vsHandle = glCreateShader(GL_VERTEX_SHADER);
+    fsHandle = glCreateShader(GL_FRAGMENT_SHADER);
+    
+    glShaderSource(vsHandle, 1, &vsSource, 0);
+    glCompileShader(vsHandle);
+    glGetShaderiv(vsHandle, GL_COMPILE_STATUS, &compileSuccess);
+    glGetShaderInfoLog(vsHandle, sizeof(compilerSpew), 0, compilerSpew);
+    PezCheckCondition(compileSuccess, compilerSpew);
+
+    glShaderSource(fsHandle, 1, &fsSource, 0);
+    glCompileShader(fsHandle);
+    glGetShaderiv(fsHandle, GL_COMPILE_STATUS, &compileSuccess);
+    glGetShaderInfoLog(fsHandle, sizeof(compilerSpew), 0, compilerSpew);
+    PezCheckCondition(compileSuccess, compilerSpew);
+
+    programHandle = glCreateProgram();
+    glAttachShader(programHandle, vsHandle);
+    glAttachShader(programHandle, fsHandle);
+    glBindAttribLocation(programHandle, PositionSlot, "Position");
+    glBindAttribLocation(programHandle, ColorSlot, "Color");
+    glLinkProgram(programHandle);
+    glGetProgramiv(programHandle, GL_LINK_STATUS, &linkSuccess);
+    glGetProgramInfoLog(programHandle, sizeof(compilerSpew), 0, compilerSpew);
+    PezCheckCondition(linkSuccess, compilerSpew);
+
+    glUseProgram(programHandle);
+}
+[/cpp]
+
+That's it!
+
+<h2 id="texture">Ghandi Texture</h2>
+
+Next we'll write a tiny Pez program that loads a PNG texture and draws it to the screen:
+
+<img src="http://prideout.net/blog/p36/PezTexture.png" alt="Pez Texture" style="border:none" />
+
+Here are the source files for this demo:
+
+<ul class="hlist">
+<li><a href="http://prideout.net/blog/p36/PezIntro3.Texture.c">PezIntro3.Texture.c</a></li>
+<li><a href="http://prideout.net/blog/p36/Simple.glsl">Simple.glsl</a></li>
+<li><a href="http://prideout.net/blog/p36/Gandhi.png">Gandhi.png</a></li>
+</ul>
+
+Aside from Pez itself, so far we've pulled in two other libraries to facilitate our sample code: GLEW and GLSW.  We're slowly forming the "Pez Ecosystem" that I'll cover later.  We now need a library to help us load textures from an external file.  I like <a href="http://www.karlings.com/~danne/pnglite/">pnglite</a> since it's yet another "one C file, one H file" solution.  Here's how to use pnglite to load in our Gandhi texture:
+
+[cpp]
+static void LoadTexture()
+{
+    png_t tex;
+    unsigned char* data;
+    GLuint textureHandle;
+
+    png_init(0, 0);
+    png_open_file_read(&tex, "../demo/Gandhi.png");
+    data = (unsigned char*) malloc(tex.width * tex.height * tex.bpp);
+    png_get_data(&tex, data);
+
+    glGenTextures(1, &textureHandle);
+    glBindTexture(GL_TEXTURE_2D, textureHandle);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, tex.width, tex.height, 0,
+                 GL_RGB, GL_UNSIGNED_BYTE, data);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+
+    png_close_file(&tex);
+    free(data);
+}
+[/cpp]
+
+The above code assumes that the PNG image is RGB only (does not contain alpha).  I don't advise hardcoding stuff like this in production code, but we're just listing out some simple examples.  Here's the effect file:
+
+[glsl]
+-- Vertex.Textured.GL3
+
+in vec2 Position;
+in vec2 InCoord;
+out vec2 OutCoord;
+
+void main()
+{
+    OutCoord = InCoord;
+    gl_Position = vec4(Position, 0, 1);
+}
+
+-- Fragment.Textured.GL3
+
+in vec2 OutCoord;
+out vec4 FragColor;
+uniform sampler2D Sampler;
+
+void main()
+{
+    FragColor = texture(Sampler, OutCoord);
+}
+[/glsl]
+
+The C source looks like this:
+
+[cpp]
+#include <pez.h>
+#include <glew.h>
+#include <glsw.h>
+#include <pnglite.h>
+#include <stdlib.h>
+
+static void BuildGeometry();
+static void LoadEffect();
+static void LoadTexture();
+
+enum { PositionSlot, TexCoordSlot };
+
+void PezHandleMouse(int x, int y, int action) { }
+
+void PezUpdate(unsigned int elapsedMilliseconds) { }
+
+void PezRender()
+{
+    glClear(GL_COLOR_BUFFER_BIT);
+    glDrawArrays(GL_TRIANGLES, 0, 6);
+}
+
+const char* PezInitialize(int width, int height)
+{
+    BuildGeometry();
+    LoadEffect();
+    LoadTexture();
+    return "Pez Intro";
+}
+
+static void LoadTexture()
+{
+    // ...see previous listing for implementation...
+}
+
+static void BuildGeometry()
+{
+    #define X (0.5f * PEZ_VIEWPORT_HEIGHT / PEZ_VIEWPORT_WIDTH)
+    #define Y (0.5f)
+    float verts[] = {
+        -X, -Y,  0,1,
+        -X, +Y,  0,0,
+        +X, +Y,  1,0,
+        +X, +Y,  1,0,
+        +X, -Y,  1,1,
+        -X, -Y,  0,1,
+    };
+    #undef X
+    #undef Y
+
+    GLuint vboHandle;
+    GLsizeiptr vboSize = sizeof(verts);
+    GLsizei stride = 4 * sizeof(float);
+    GLenum usage = GL_STATIC_DRAW;
+    GLvoid* texCoordOffset = (GLvoid*) (sizeof(float) * 2);
+
+    glGenBuffers(1, &vboHandle);
+    glBindBuffer(GL_ARRAY_BUFFER, vboHandle);
+    glBufferData(GL_ARRAY_BUFFER, vboSize, verts, usage);
+    glVertexAttribPointer(PositionSlot, 2, GL_FLOAT, GL_FALSE, stride, 0);
+    glVertexAttribPointer(TexCoordSlot, 2, GL_FLOAT, GL_FALSE, stride, texCoordOffset);
+    glEnableVertexAttribArray(PositionSlot);
+    glEnableVertexAttribArray(TexCoordSlot);
+}
+
+static void LoadEffect()
+{
+    const char* vsSource, * fsSource;
+    GLuint vsHandle, fsHandle;
+    GLint compileSuccess, linkSuccess;
+    GLchar compilerSpew[256];
+    GLuint programHandle;
+
+    glswInit();
+    glswSetPath("../demo/", ".glsl");
+    glswAddDirectiveToken("GL3", "#version 130");
+
+    vsSource = glswGetShader("Simple.Vertex.Textured." PEZ_GL_VERSION_TOKEN);
+    fsSource = glswGetShader("Simple.Fragment.Textured." PEZ_GL_VERSION_TOKEN);
+    PezCheckCondition(vsSource, "Can't find vertex shader.\n");
+    PezCheckCondition(fsSource, "Can't find fragment shader.\n");
+
+    vsHandle = glCreateShader(GL_VERTEX_SHADER);
+    fsHandle = glCreateShader(GL_FRAGMENT_SHADER);
+    
+    glShaderSource(vsHandle, 1, &vsSource, 0);
+    glCompileShader(vsHandle);
+    glGetShaderiv(vsHandle, GL_COMPILE_STATUS, &compileSuccess);
+    glGetShaderInfoLog(vsHandle, sizeof(compilerSpew), 0, compilerSpew);
+    PezCheckCondition(compileSuccess, compilerSpew);
+
+    glShaderSource(fsHandle, 1, &fsSource, 0);
+    glCompileShader(fsHandle);
+    glGetShaderiv(fsHandle, GL_COMPILE_STATUS, &compileSuccess);
+    glGetShaderInfoLog(fsHandle, sizeof(compilerSpew), 0, compilerSpew);
+    PezCheckCondition(compileSuccess, compilerSpew);
+
+    programHandle = glCreateProgram();
+    glAttachShader(programHandle, vsHandle);
+    glAttachShader(programHandle, fsHandle);
+    glBindAttribLocation(programHandle, PositionSlot, "Position");
+    glBindAttribLocation(programHandle, TexCoordSlot, "InCoord");
+    glLinkProgram(programHandle);
+    glGetProgramiv(programHandle, GL_LINK_STATUS, &linkSuccess);
+    glGetProgramInfoLog(programHandle, sizeof(compilerSpew), 0, compilerSpew);
+    PezCheckCondition(linkSuccess, compilerSpew);
+
+    glUseProgram(programHandle);
+}
+[/cpp]
+
+That's it for the texture viewer!
+
+<h2 id="mesh">Mesh Viewer</h2>
+
+Next let's light up some artistic 3D content and spin it around:
+
+<img src="http://prideout.net/blog/p36/PezMesh.png" alt="Pez Mesh" style="border:none" />
+
+For this demo, we'll switch from ANSI C to C++.  Here are the source files:
+
+<ul class="hlist">
+<li><a href="http://prideout.net/blog/p36/PezIntro4.Mesh.cpp">PezIntro4.Mesh.cpp</a></li>
+<li><a href="http://prideout.net/blog/p36/PixelLighting.glsl">PixelLighting.glsl</a></li>
+<li><a href="http://prideout.net/blog/p36/HeadlessGiant.ctm">HeadlessGiant.ctm</a></li>
+</ul>
+
+For the per-pixel lighting effect, see <a href="http://prideout.net/blog/?p=22#per-pixel">my other blog post</a>.  For loading the "headless giant" mesh, we'll use <a href="http://openctm.sourceforge.net/">OpenCTM</a>, which supports good compression and has a nice & simple API.  Here's how we'll use it to load the model and create a VBO:
+
+[cpp]
+static void LoadMesh()
+{
+    RenderContext& rc = GlobalRenderContext;
+
+    // Open the CTM file:
+    CTMcontext ctmContext = ctmNewContext(CTM_IMPORT);
+    ctmLoad(ctmContext, "../demo/HeadlessGiant.ctm");
+    PezCheckCondition(ctmGetError(ctmContext) == CTM_NONE, "OpenCTM Issue");
+    CTMuint vertexCount = ctmGetInteger(ctmContext, CTM_VERTEX_COUNT);
+    rc.IndexCount = 3 * ctmGetInteger(ctmContext, CTM_TRIANGLE_COUNT);
+
+    // Create the VBO for positions:
+    const CTMfloat* positions = ctmGetFloatArray(ctmContext, CTM_VERTICES);
+    if (positions) {
+        GLuint handle;
+        GLsizeiptr size = vertexCount * sizeof(float) * 3;
+        glGenBuffers(1, &handle);
+        glBindBuffer(GL_ARRAY_BUFFER, handle);
+        glBufferData(GL_ARRAY_BUFFER, size, positions, GL_STATIC_DRAW);
+        glEnableVertexAttribArray(SlotPosition);
+        glVertexAttribPointer(SlotPosition, 3, GL_FLOAT, GL_FALSE, sizeof(float) * 3, 0);
+    }
+
+    // Create the VBO for normals:
+    const CTMfloat* normals = ctmGetFloatArray(ctmContext, CTM_NORMALS);
+    if (normals) {
+        GLuint handle;
+        GLsizeiptr size = vertexCount * sizeof(float) * 3;
+        glGenBuffers(1, &handle);
+        glBindBuffer(GL_ARRAY_BUFFER, handle);
+        glBufferData(GL_ARRAY_BUFFER, size, normals, GL_STATIC_DRAW);
+        glEnableVertexAttribArray(SlotNormal);
+        glVertexAttribPointer(SlotNormal, 3, GL_FLOAT, GL_FALSE, sizeof(float) * 3, 0);
+    }
+
+    // Create the VBO for indices:
+    const CTMuint* indices = ctmGetIntegerArray(ctmContext, CTM_INDICES);
+    if (indices) {
+        GLuint handle;
+        GLsizeiptr size = rc.IndexCount * sizeof(CTMuint);
+        glGenBuffers(1, &handle);
+        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, handle);
+        glBufferData(GL_ELEMENT_ARRAY_BUFFER, size, indices, GL_STATIC_DRAW);
+    }
+
+    ctmFreeContext(ctmContext);
+}
+[/cpp]
+
+The other lightweight library we'll pull in for this example is the Sony Vector Library, which has nice APIs for C and C++, and supports the various matrix operations from old-school OpenGL that are no longer in the core specification.  For example, here's how you'd use their C++ API to compute a projection matrix from a viewing frustum:
+
+[cpp light="true"]
+Matrix4 projection = Matrix4::frustum(left, right, bottom, top, zNear, zFar);
+[/cpp]
+
+The C++ source code for this demo is fairly straightforward.  Here it is:
+
+[cpp]
+#include <pez.h>
+#include <vectormath_aos.h>
+#include <glsw.h>
+#include <glew.h>
+#include <openctm.h>
+
+using namespace Vectormath::Aos;
+
+enum { SlotPosition, SlotNormal };
+
+struct ShaderUniforms {
+    GLuint Projection;
+    GLuint Modelview;
+    GLuint NormalMatrix;
+};
+
+struct RenderContext {
+    GLuint EffectHandle;
+    ShaderUniforms EffectUniforms;
+    Matrix4 Projection;
+    Matrix4 Modelview;
+    Matrix3 NormalMatrix;
+    float PackedNormalMatrix[9];
+    float Theta;
+    CTMuint IndexCount;
+};
+
+static RenderContext GlobalRenderContext;
+static GLuint BuildShader(const char* source, GLenum shaderType);
+static GLuint BuildProgram(const char* vsKey, const char* fsKey);
+static void LoadMesh();
+static void LoadEffect();
+
+void PezHandleMouse(int x, int y, int action) { }
+
+const char* PezInitialize(int width, int height)
+{
+    LoadMesh();
+    LoadEffect();
+    glEnable(GL_DEPTH_TEST);
+    return "OpenCTM Viewer";
+}
+
+void PezRender()
+{
+    RenderContext& rc = GlobalRenderContext;
+    glClearColor(0, 0.25f, 0.5f, 1);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    glUniformMatrix4fv(rc.EffectUniforms.Projection, 1, 0, &rc.Projection[0][0]);
+    glUniformMatrix4fv(rc.EffectUniforms.Modelview, 1, 0, &rc.Modelview[0][0]);
+    glUniformMatrix3fv(rc.EffectUniforms.NormalMatrix, 1, 0, &rc.PackedNormalMatrix[0]);
+    glDrawElements(GL_TRIANGLES, rc.IndexCount, GL_UNSIGNED_INT, 0);
+}
+
+void PezUpdate(unsigned int elapsedMilliseconds)
+{
+    RenderContext& rc = GlobalRenderContext;
+
+    rc.Theta += elapsedMilliseconds * 0.05f;
+
+    Matrix4 rotation = Matrix4::rotationY(rc.Theta * Pi / 180.0f);
+    Matrix4 translation = Matrix4::translation(Vector3(0, 0, -50));
+    rc.Modelview = translation * rotation;
+    rc.NormalMatrix = rc.Modelview.getUpper3x3();
+
+    for (int i = 0; i < 9; ++i)
+        rc.PackedNormalMatrix[i] = rc.NormalMatrix[i / 3][i % 3];
+
+    const float x = 0.6f;
+    const float y = x * PEZ_VIEWPORT_HEIGHT / PEZ_VIEWPORT_WIDTH;
+    const float left = -x, right = x;
+    const float bottom = -y, top = y;
+    const float zNear = 4, zFar = 100;
+    rc.Projection = Matrix4::frustum(left, right, bottom, top, zNear, zFar);
+}
+
+static void LoadMesh()
+{
+    // ...see previous listing for implementation...
+}
+
+static GLuint BuildShader(const char* source, GLenum shaderType)
+{
+    // ...similar to previous listings...
+}
+
+static GLuint BuildProgram(const char* vsKey, const char* fsKey)
+{
+    // ...similar to previous listings...
+}
+
+static void LoadEffect()
+{
+    RenderContext& rc = GlobalRenderContext;
+
+    glswInit();
+    glswSetPath("../demo/", ".glsl");
+    glswAddDirectiveToken("GL3", "#version 130");
+
+    const char* vsKey = "PixelLighting.Vertex." PEZ_GL_VERSION_TOKEN;
+    const char* fsKey = "PixelLighting.Fragment." PEZ_GL_VERSION_TOKEN;
+
+    rc.EffectHandle = BuildProgram(vsKey, fsKey);
+    rc.EffectUniforms.Projection = glGetUniformLocation(rc.EffectHandle, "Projection");
+    rc.EffectUniforms.Modelview = glGetUniformLocation(rc.EffectHandle, "Modelview");
+    rc.EffectUniforms.NormalMatrix = glGetUniformLocation(rc.EffectHandle, "NormalMatrix");
+    rc.Theta = 0;
+
+    glUseProgram(rc.EffectHandle);
+
+    GLuint LightPosition = glGetUniformLocation(rc.EffectHandle, "LightPosition");
+    GLuint AmbientMaterial = glGetUniformLocation(rc.EffectHandle, "AmbientMaterial");
+    GLuint DiffuseMaterial = glGetUniformLocation(rc.EffectHandle, "DiffuseMaterial");
+    GLuint SpecularMaterial = glGetUniformLocation(rc.EffectHandle, "SpecularMaterial");
+    GLuint Shininess = glGetUniformLocation(rc.EffectHandle, "Shininess");
+
+    glUniform3f(DiffuseMaterial, 0.75, 0.75, 0.5);
+    glUniform3f(AmbientMaterial, 0.04f, 0.04f, 0.04f);
+    glUniform3f(SpecularMaterial, 0.5, 0.5, 0.5);
+    glUniform1f(Shininess, 50);
+    glUniform3f(LightPosition, 0.25, 0.25, 1);
+}
+[/cpp]
+
+<h2 id="ecosystem">Pez Ecosystem</h2>
+
+While developing these tutorials, I've selected a variety of libraries to help us along.  OpenGL is a low-level API and it (sensibly) doesn't attempt to do things like decode image files and whatnot.
+
+I've made sure that all these libraries have fairly liberal licenses (specifically, they're not LGPL) and that they're all very tiny.  Here's the complete list:
+
+<ul>
+<li>Pez itself</li>
+<li>OpenGL Extension Wrangler</li>
+<li>OpenGL Shader Wrangler (uses bstrlib)</li>
+<li>pnglite (uses zlib)</li>
+<li>OpenCTM Mesh Format (uses lzma)</li>
+<li>Sony Vector Library (extracted from Bullet)</li>
+</ul>
+
+<h2 id="downloads">Downloads</h2>
+
+You can get a package that has all the demos on this page and the complete Pez ecosystem.  It uses CMake for the build system.  CMake is easy to use and very popular (Blender, KDE, and Boost use it).  It's similar to autoconf in that it can generate makefiles, but it can also generate actual <i>project files</i> which you can open with IDE's like Visual Studio and Xcode.
+
+<ul>
+<li><a href="http://prideout.net/blog/p36/pez.tar.gz">pez.tar.gz</a></li>
+<li><a href="http://prideout.net/blog/p36/pez.zip">pez.zip</a></li>
+</ul>
+
+Or, you can just download the Pez files individually and drop them into whatever build system you're using:
+
+<ul>
+<li><a href="http://prideout.net/blog/p36/pez.h">pez.h</a></li>
+<li><a href="http://prideout.net/blog/p36/pez.cocoa.m">pez.cocoa.m</a></li>
+<li><a href="http://prideout.net/blog/p36/pez.linux.c">pez.linux.c</a></li>
+<li><a href="http://prideout.net/blog/p36/pez.windows.c">pez.windows.c</a></li>
+</ul>
+
+Have fun!  Remember, Pez is designed only for very, very tiny OpenGL programs.  Don't try to use it to build a CAD package or bring about world peace.

@@ -1,0 +1,20 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 9.00
+# Visual Studio 2005
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "x2ctm.2005", "x2ctm.2005.vcproj", "{1E9F36C6-E574-4E9E-88C2-59D4F1C7F1AF}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Win32 = Debug|Win32
+		Release|Win32 = Release|Win32
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{1E9F36C6-E574-4E9E-88C2-59D4F1C7F1AF}.Debug|Win32.ActiveCfg = Debug|Win32
+		{1E9F36C6-E574-4E9E-88C2-59D4F1C7F1AF}.Debug|Win32.Build.0 = Debug|Win32
+		{1E9F36C6-E574-4E9E-88C2-59D4F1C7F1AF}.Release|Win32.ActiveCfg = Release|Win32
+		{1E9F36C6-E574-4E9E-88C2-59D4F1C7F1AF}.Release|Win32.Build.0 = Release|Win32
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+EndGlobal

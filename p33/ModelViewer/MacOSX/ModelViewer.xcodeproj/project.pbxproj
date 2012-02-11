@@ -1,0 +1,401 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 42;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		4A4C35281038C396002B58DB /* RenderingEngine.SolidGL2.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 4A4C35251038C396002B58DB /* RenderingEngine.SolidGL2.cpp */; };
+		4A4C352A1038C3A8002B58DB /* ApplicationEngine.ParametricViewer.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 4A4C35291038C3A8002B58DB /* ApplicationEngine.ParametricViewer.cpp */; };
+		4A5D38011025F342005A52FA /* Interfaces.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 4A5D37F41025F342005A52FA /* Interfaces.hpp */; };
+		4A5D38021025F342005A52FA /* Matrix.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 4A5D37F51025F342005A52FA /* Matrix.hpp */; };
+		4A5D38031025F342005A52FA /* ParametricEquations.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 4A5D37F61025F342005A52FA /* ParametricEquations.hpp */; };
+		4A5D38041025F342005A52FA /* ParametricSurface.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 4A5D37F71025F342005A52FA /* ParametricSurface.cpp */; };
+		4A5D38051025F342005A52FA /* ParametricSurface.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 4A5D37F81025F342005A52FA /* ParametricSurface.hpp */; };
+		4A5D38061025F342005A52FA /* Quaternion.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 4A5D37F91025F342005A52FA /* Quaternion.hpp */; };
+		4A5D380B1025F342005A52FA /* Vector.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 4A5D37FE1025F342005A52FA /* Vector.hpp */; };
+		4A5EC8FF1049E5E7003BE22F /* PixelLighting.gl2.frag in Resources */ = {isa = PBXBuildFile; fileRef = 4A5EC8FD1049E5E7003BE22F /* PixelLighting.gl2.frag */; };
+		4A5EC9001049E5E7003BE22F /* PixelLighting.gl2.vert in Resources */ = {isa = PBXBuildFile; fileRef = 4A5EC8FE1049E5E7003BE22F /* PixelLighting.gl2.vert */; };
+		4D421B80104A395C00EA9F2B /* ToonLighting.gl2.frag in Resources */ = {isa = PBXBuildFile; fileRef = 4D421B7E104A395C00EA9F2B /* ToonLighting.gl2.frag */; };
+		4D421B81104A395C00EA9F2B /* ToonLighting.gl2.vert in Resources */ = {isa = PBXBuildFile; fileRef = 4D421B7F104A395C00EA9F2B /* ToonLighting.gl2.vert */; };
+		4D8161EF1053221B00E6D637 /* TexturedLighting.gl2.frag in Resources */ = {isa = PBXBuildFile; fileRef = 4D8161ED1053221B00E6D637 /* TexturedLighting.gl2.frag */; };
+		4D8161F01053221B00E6D637 /* TexturedLighting.gl2.vert in Resources */ = {isa = PBXBuildFile; fileRef = 4D8161EE1053221B00E6D637 /* TexturedLighting.gl2.vert */; };
+		4D8161FD1053253700E6D637 /* QuartzCore.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 4D8161FC1053253700E6D637 /* QuartzCore.framework */; };
+		4D8162A51053485200E6D637 /* Grid01.png in Resources */ = {isa = PBXBuildFile; fileRef = 4D8162A01053485200E6D637 /* Grid01.png */; };
+		4D8162A61053485200E6D637 /* Grid02.png in Resources */ = {isa = PBXBuildFile; fileRef = 4D8162A11053485200E6D637 /* Grid02.png */; };
+		4D8162A71053485200E6D637 /* Grid04.png in Resources */ = {isa = PBXBuildFile; fileRef = 4D8162A21053485200E6D637 /* Grid04.png */; };
+		4D8162A81053485200E6D637 /* Grid08.png in Resources */ = {isa = PBXBuildFile; fileRef = 4D8162A31053485200E6D637 /* Grid08.png */; };
+		4D8162A91053485200E6D637 /* Grid16.png in Resources */ = {isa = PBXBuildFile; fileRef = 4D8162A41053485200E6D637 /* Grid16.png */; };
+		4DFC02AD1055C39800C619B2 /* Grasshopper.png in Resources */ = {isa = PBXBuildFile; fileRef = 4DFC02AC1055C39800C619B2 /* Grasshopper.png */; };
+		745F0AF70AC884E700190A69 /* InfoPlist.strings in Resources */ = {isa = PBXBuildFile; fileRef = 089C165CFE840E0CC02AAC07 /* InfoPlist.strings */; };
+		745F0AFA0AC884E700190A69 /* main.mm in Sources */ = {isa = PBXBuildFile; fileRef = 29B97316FDCFA39411CA2CEA /* main.mm */; settings = {ATTRIBUTES = (); }; };
+		745F0AFF0AC884E700190A69 /* Cocoa.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 1058C7A1FEA54F0111CA2CBB /* Cocoa.framework */; };
+		745F0B000AC884E700190A69 /* OpenGL.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 0EADB2FA024C6AC50ACE435C /* OpenGL.framework */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		089C165DFE840E0CC02AAC07 /* English */ = {isa = PBXFileReference; fileEncoding = 10; lastKnownFileType = text.plist.strings; name = English; path = English.lproj/InfoPlist.strings; sourceTree = "<group>"; };
+		0EADB2FA024C6AC50ACE435C /* OpenGL.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = OpenGL.framework; path = /System/Library/Frameworks/OpenGL.framework; sourceTree = "<absolute>"; };
+		1058C7A1FEA54F0111CA2CBB /* Cocoa.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Cocoa.framework; path = /System/Library/Frameworks/Cocoa.framework; sourceTree = "<absolute>"; };
+		29B97316FDCFA39411CA2CEA /* main.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = main.mm; sourceTree = "<group>"; };
+		29B97324FDCFA39411CA2CEA /* AppKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AppKit.framework; path = /System/Library/Frameworks/AppKit.framework; sourceTree = "<absolute>"; };
+		29B97325FDCFA39411CA2CEA /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = /System/Library/Frameworks/Foundation.framework; sourceTree = "<absolute>"; };
+		4A3A6BB010263843002B12DF /* SimpleLighting.gl2.frag */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text; name = SimpleLighting.gl2.frag; path = ../Shaders/SimpleLighting.gl2.frag; sourceTree = SOURCE_ROOT; };
+		4A3A6BB110263843002B12DF /* SimpleLighting.gl2.vert */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text; name = SimpleLighting.gl2.vert; path = ../Shaders/SimpleLighting.gl2.vert; sourceTree = SOURCE_ROOT; };
+		4A4C35251038C396002B58DB /* RenderingEngine.SolidGL2.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = RenderingEngine.SolidGL2.cpp; path = ../Classes/RenderingEngine.SolidGL2.cpp; sourceTree = SOURCE_ROOT; };
+		4A4C35291038C3A8002B58DB /* ApplicationEngine.ParametricViewer.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = ApplicationEngine.ParametricViewer.cpp; path = ../Classes/ApplicationEngine.ParametricViewer.cpp; sourceTree = SOURCE_ROOT; };
+		4A5D37F41025F342005A52FA /* Interfaces.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = Interfaces.hpp; path = ../Classes/Interfaces.hpp; sourceTree = SOURCE_ROOT; };
+		4A5D37F51025F342005A52FA /* Matrix.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = Matrix.hpp; path = ../Classes/Matrix.hpp; sourceTree = SOURCE_ROOT; };
+		4A5D37F61025F342005A52FA /* ParametricEquations.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = ParametricEquations.hpp; path = ../Classes/ParametricEquations.hpp; sourceTree = SOURCE_ROOT; };
+		4A5D37F71025F342005A52FA /* ParametricSurface.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = ParametricSurface.cpp; path = ../Classes/ParametricSurface.cpp; sourceTree = SOURCE_ROOT; };
+		4A5D37F81025F342005A52FA /* ParametricSurface.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = ParametricSurface.hpp; path = ../Classes/ParametricSurface.hpp; sourceTree = SOURCE_ROOT; };
+		4A5D37F91025F342005A52FA /* Quaternion.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = Quaternion.hpp; path = ../Classes/Quaternion.hpp; sourceTree = SOURCE_ROOT; };
+		4A5D37FE1025F342005A52FA /* Vector.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = Vector.hpp; path = ../Classes/Vector.hpp; sourceTree = SOURCE_ROOT; };
+		4A5EC8FD1049E5E7003BE22F /* PixelLighting.gl2.frag */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text; name = PixelLighting.gl2.frag; path = ../Shaders/PixelLighting.gl2.frag; sourceTree = SOURCE_ROOT; };
+		4A5EC8FE1049E5E7003BE22F /* PixelLighting.gl2.vert */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text; name = PixelLighting.gl2.vert; path = ../Shaders/PixelLighting.gl2.vert; sourceTree = SOURCE_ROOT; };
+		4D421B7E104A395C00EA9F2B /* ToonLighting.gl2.frag */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text; name = ToonLighting.gl2.frag; path = ../Shaders/ToonLighting.gl2.frag; sourceTree = SOURCE_ROOT; };
+		4D421B7F104A395C00EA9F2B /* ToonLighting.gl2.vert */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text; name = ToonLighting.gl2.vert; path = ../Shaders/ToonLighting.gl2.vert; sourceTree = SOURCE_ROOT; };
+		4D8161ED1053221B00E6D637 /* TexturedLighting.gl2.frag */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text; name = TexturedLighting.gl2.frag; path = ../Shaders/TexturedLighting.gl2.frag; sourceTree = SOURCE_ROOT; };
+		4D8161EE1053221B00E6D637 /* TexturedLighting.gl2.vert */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text; name = TexturedLighting.gl2.vert; path = ../Shaders/TexturedLighting.gl2.vert; sourceTree = SOURCE_ROOT; };
+		4D8161FC1053253700E6D637 /* QuartzCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = QuartzCore.framework; path = /System/Library/Frameworks/QuartzCore.framework; sourceTree = "<absolute>"; };
+		4D8162A01053485200E6D637 /* Grid01.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = Grid01.png; path = ../Textures/Grid01.png; sourceTree = SOURCE_ROOT; };
+		4D8162A11053485200E6D637 /* Grid02.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = Grid02.png; path = ../Textures/Grid02.png; sourceTree = SOURCE_ROOT; };
+		4D8162A21053485200E6D637 /* Grid04.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = Grid04.png; path = ../Textures/Grid04.png; sourceTree = SOURCE_ROOT; };
+		4D8162A31053485200E6D637 /* Grid08.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = Grid08.png; path = ../Textures/Grid08.png; sourceTree = SOURCE_ROOT; };
+		4D8162A41053485200E6D637 /* Grid16.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = Grid16.png; path = ../Textures/Grid16.png; sourceTree = SOURCE_ROOT; };
+		4DFC02AC1055C39800C619B2 /* Grasshopper.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = Grasshopper.png; path = ../Textures/Grasshopper.png; sourceTree = SOURCE_ROOT; };
+		745F0B050AC884E700190A69 /* ModelViewer.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ModelViewer.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		745F0B480AC8866C00190A69 /* Info.plist */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		745F0AFE0AC884E700190A69 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				745F0AFF0AC884E700190A69 /* Cocoa.framework in Frameworks */,
+				745F0B000AC884E700190A69 /* OpenGL.framework in Frameworks */,
+				4D8161FD1053253700E6D637 /* QuartzCore.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		080E96DDFE201D6D7F000001 /* Objective C */ = {
+			isa = PBXGroup;
+			children = (
+				29B97316FDCFA39411CA2CEA /* main.mm */,
+			);
+			name = "Objective C";
+			sourceTree = "<group>";
+		};
+		1058C7A0FEA54F0111CA2CBB /* Linked Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				4D8161FC1053253700E6D637 /* QuartzCore.framework */,
+				1058C7A1FEA54F0111CA2CBB /* Cocoa.framework */,
+				0EADB2FA024C6AC50ACE435C /* OpenGL.framework */,
+			);
+			name = "Linked Frameworks";
+			sourceTree = "<group>";
+		};
+		1058C7A2FEA54F0111CA2CBB /* Other Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				29B97325FDCFA39411CA2CEA /* Foundation.framework */,
+				29B97324FDCFA39411CA2CEA /* AppKit.framework */,
+			);
+			name = "Other Frameworks";
+			sourceTree = "<group>";
+		};
+		19C28FACFE9D520D11CA2CBB /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				745F0B050AC884E700190A69 /* ModelViewer.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		29B97314FDCFA39411CA2CEA /* ModelViewer */ = {
+			isa = PBXGroup;
+			children = (
+				4D81629F1053483A00E6D637 /* Textures */,
+				4A3A6BAF10263827002B12DF /* Shaders */,
+				4A5D37F11025F31E005A52FA /* C++ */,
+				080E96DDFE201D6D7F000001 /* Objective C */,
+				29B97317FDCFA39411CA2CEA /* Resources */,
+				29B97323FDCFA39411CA2CEA /* Frameworks */,
+				19C28FACFE9D520D11CA2CBB /* Products */,
+			);
+			name = ModelViewer;
+			sourceTree = "<group>";
+		};
+		29B97317FDCFA39411CA2CEA /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				745F0B480AC8866C00190A69 /* Info.plist */,
+				089C165CFE840E0CC02AAC07 /* InfoPlist.strings */,
+			);
+			name = Resources;
+			sourceTree = "<group>";
+		};
+		29B97323FDCFA39411CA2CEA /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				1058C7A0FEA54F0111CA2CBB /* Linked Frameworks */,
+				1058C7A2FEA54F0111CA2CBB /* Other Frameworks */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
+		4A3A6BAF10263827002B12DF /* Shaders */ = {
+			isa = PBXGroup;
+			children = (
+				4D8161ED1053221B00E6D637 /* TexturedLighting.gl2.frag */,
+				4D8161EE1053221B00E6D637 /* TexturedLighting.gl2.vert */,
+				4D421B7E104A395C00EA9F2B /* ToonLighting.gl2.frag */,
+				4D421B7F104A395C00EA9F2B /* ToonLighting.gl2.vert */,
+				4A5EC8FD1049E5E7003BE22F /* PixelLighting.gl2.frag */,
+				4A5EC8FE1049E5E7003BE22F /* PixelLighting.gl2.vert */,
+				4A3A6BB010263843002B12DF /* SimpleLighting.gl2.frag */,
+				4A3A6BB110263843002B12DF /* SimpleLighting.gl2.vert */,
+			);
+			name = Shaders;
+			sourceTree = "<group>";
+		};
+		4A5D37F11025F31E005A52FA /* C++ */ = {
+			isa = PBXGroup;
+			children = (
+				4A5D37F41025F342005A52FA /* Interfaces.hpp */,
+				4A4C35291038C3A8002B58DB /* ApplicationEngine.ParametricViewer.cpp */,
+				4A4C35251038C396002B58DB /* RenderingEngine.SolidGL2.cpp */,
+				4A5D37F61025F342005A52FA /* ParametricEquations.hpp */,
+				4A5D37F71025F342005A52FA /* ParametricSurface.cpp */,
+				4A5D37F81025F342005A52FA /* ParametricSurface.hpp */,
+				4A5D37FE1025F342005A52FA /* Vector.hpp */,
+				4A5D37F51025F342005A52FA /* Matrix.hpp */,
+				4A5D37F91025F342005A52FA /* Quaternion.hpp */,
+			);
+			name = "C++";
+			sourceTree = "<group>";
+		};
+		4D81629F1053483A00E6D637 /* Textures */ = {
+			isa = PBXGroup;
+			children = (
+				4DFC02AC1055C39800C619B2 /* Grasshopper.png */,
+				4D8162A01053485200E6D637 /* Grid01.png */,
+				4D8162A11053485200E6D637 /* Grid02.png */,
+				4D8162A21053485200E6D637 /* Grid04.png */,
+				4D8162A31053485200E6D637 /* Grid08.png */,
+				4D8162A41053485200E6D637 /* Grid16.png */,
+			);
+			name = Textures;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXHeadersBuildPhase section */
+		745F0AF10AC884E700190A69 /* Headers */ = {
+			isa = PBXHeadersBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				4A5D38011025F342005A52FA /* Interfaces.hpp in Headers */,
+				4A5D38021025F342005A52FA /* Matrix.hpp in Headers */,
+				4A5D38031025F342005A52FA /* ParametricEquations.hpp in Headers */,
+				4A5D38051025F342005A52FA /* ParametricSurface.hpp in Headers */,
+				4A5D38061025F342005A52FA /* Quaternion.hpp in Headers */,
+				4A5D380B1025F342005A52FA /* Vector.hpp in Headers */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXHeadersBuildPhase section */
+
+/* Begin PBXNativeTarget section */
+		745F0AF00AC884E700190A69 /* ModelViewer */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 745F0B010AC884E700190A69 /* Build configuration list for PBXNativeTarget "ModelViewer" */;
+			buildPhases = (
+				745F0AF10AC884E700190A69 /* Headers */,
+				745F0AF50AC884E700190A69 /* Resources */,
+				745F0AF90AC884E700190A69 /* Sources */,
+				745F0AFE0AC884E700190A69 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = ModelViewer;
+			productInstallPath = "$(HOME)/Applications";
+			productName = ModelViewer;
+			productReference = 745F0B050AC884E700190A69 /* ModelViewer.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		29B97313FDCFA39411CA2CEA /* Project object */ = {
+			isa = PBXProject;
+			buildConfigurationList = 745F0AE10AC8836E00190A69 /* Build configuration list for PBXProject "ModelViewer" */;
+			compatibilityVersion = "Xcode 2.4";
+			hasScannedForEncodings = 0;
+			mainGroup = 29B97314FDCFA39411CA2CEA /* ModelViewer */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				745F0AF00AC884E700190A69 /* ModelViewer */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		745F0AF50AC884E700190A69 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				745F0AF70AC884E700190A69 /* InfoPlist.strings in Resources */,
+				4A5EC8FF1049E5E7003BE22F /* PixelLighting.gl2.frag in Resources */,
+				4A5EC9001049E5E7003BE22F /* PixelLighting.gl2.vert in Resources */,
+				4D421B80104A395C00EA9F2B /* ToonLighting.gl2.frag in Resources */,
+				4D421B81104A395C00EA9F2B /* ToonLighting.gl2.vert in Resources */,
+				4D8161EF1053221B00E6D637 /* TexturedLighting.gl2.frag in Resources */,
+				4D8161F01053221B00E6D637 /* TexturedLighting.gl2.vert in Resources */,
+				4D8162A51053485200E6D637 /* Grid01.png in Resources */,
+				4D8162A61053485200E6D637 /* Grid02.png in Resources */,
+				4D8162A71053485200E6D637 /* Grid04.png in Resources */,
+				4D8162A81053485200E6D637 /* Grid08.png in Resources */,
+				4D8162A91053485200E6D637 /* Grid16.png in Resources */,
+				4DFC02AD1055C39800C619B2 /* Grasshopper.png in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		745F0AF90AC884E700190A69 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				745F0AFA0AC884E700190A69 /* main.mm in Sources */,
+				4A5D38041025F342005A52FA /* ParametricSurface.cpp in Sources */,
+				4A4C35281038C396002B58DB /* RenderingEngine.SolidGL2.cpp in Sources */,
+				4A4C352A1038C3A8002B58DB /* ApplicationEngine.ParametricViewer.cpp in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXVariantGroup section */
+		089C165CFE840E0CC02AAC07 /* InfoPlist.strings */ = {
+			isa = PBXVariantGroup;
+			children = (
+				089C165DFE840E0CC02AAC07 /* English */,
+			);
+			name = InfoPlist.strings;
+			sourceTree = "<group>";
+		};
+/* End PBXVariantGroup section */
+
+/* Begin XCBuildConfiguration section */
+		745F0AE20AC8836E00190A69 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				GCC_PREPROCESSOR_DEFINITIONS = MACOSX;
+				SDKROOT = /Developer/SDKs/MacOSX10.4u.sdk;
+			};
+			name = Release;
+		};
+		745F0AE30AC8836E00190A69 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				GCC_PREPROCESSOR_DEFINITIONS = MACOSX;
+				SDKROOT = /Developer/SDKs/MacOSX10.4u.sdk;
+			};
+			name = Debug;
+		};
+		745F0B020AC884E700190A69 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ARCHS = (
+					ppc,
+					i386,
+				);
+				COPY_PHASE_STRIP = NO;
+				FRAMEWORK_SEARCH_PATHS = "";
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_ENABLE_FIX_AND_CONTINUE = YES;
+				GCC_GENERATE_DEBUGGING_SYMBOLS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_SYMBOLS_PRIVATE_EXTERN = NO;
+				HEADER_SEARCH_PATHS = "";
+				INFOPLIST_FILE = Info.plist;
+				INSTALL_PATH = "$(HOME)/Applications";
+				LIBRARY_SEARCH_PATHS = "";
+				OTHER_CFLAGS = "";
+				OTHER_LDFLAGS = "";
+				PREBINDING = NO;
+				PRODUCT_NAME = ModelViewer;
+				SECTORDER_FLAGS = "";
+				WARNING_CFLAGS = (
+					"-Wmost",
+					"-Wno-four-char-constants",
+					"-Wno-unknown-pragmas",
+				);
+				WRAPPER_EXTENSION = app;
+				ZERO_LINK = NO;
+			};
+			name = Release;
+		};
+		745F0B030AC884E700190A69 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				COPY_PHASE_STRIP = YES;
+				FRAMEWORK_SEARCH_PATHS = "";
+				GCC_ENABLE_FIX_AND_CONTINUE = NO;
+				GCC_SYMBOLS_PRIVATE_EXTERN = NO;
+				HEADER_SEARCH_PATHS = "";
+				INFOPLIST_FILE = Info.plist;
+				INSTALL_PATH = "$(HOME)/Applications";
+				LIBRARY_SEARCH_PATHS = "";
+				OTHER_CFLAGS = "";
+				OTHER_LDFLAGS = "";
+				PREBINDING = NO;
+				PRODUCT_NAME = ModelViewer;
+				SECTORDER_FLAGS = "";
+				WARNING_CFLAGS = (
+					"-Wmost",
+					"-Wno-four-char-constants",
+					"-Wno-unknown-pragmas",
+				);
+				WRAPPER_EXTENSION = app;
+				ZERO_LINK = NO;
+			};
+			name = Debug;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		745F0AE10AC8836E00190A69 /* Build configuration list for PBXProject "ModelViewer" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				745F0AE20AC8836E00190A69 /* Release */,
+				745F0AE30AC8836E00190A69 /* Debug */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		745F0B010AC884E700190A69 /* Build configuration list for PBXNativeTarget "ModelViewer" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				745F0B020AC884E700190A69 /* Release */,
+				745F0B030AC884E700190A69 /* Debug */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 29B97313FDCFA39411CA2CEA /* Project object */;
+}

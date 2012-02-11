@@ -1,0 +1,30 @@
+What's libpez?
+
+Pez is a platform abstraction layer; it's just an extra-tiny alternative to GLUT.
+To create a cross-platform OpenGL app, simply link against the pez source and implement four functions:
+
+    const char* PezInitialize(int width, int height); // pass in window size and return window title
+    void PezRender();                                 // draw scene (pez swaps the backbuffer for you)
+    void PezUpdate(unsigned int milliseconds);        // pass in elapsed time (e.g., update physics)
+    void PezHandleMouse(int x, int y, int action);    // handle mouse action: PEZ_DOWN, PEZ_UP, or PEZ_MOVE
+
+Additionally, Pez provides the following inlined utility functions for your convenience.
+Use these instead of printf, exception-throwing, and asserts.
+
+    PezDebugStringW(...)        // printf-style messaging for the debugger (wide characters)
+    PezDebugString(...)         // printf-style messaging for the debugger (narrow characters)
+    PezFatalErrorW(...)         // causes a fatal error and dumps a printf-style message to the debugger (wide)
+    PezFatalError(...)          // causes a fatal error and dumps a printf-style message to the debugger (narrow)
+    PezCheckConditionW(A, ...)  // if A is false, causes a fatal error and prints to the debugger (wide)
+    PezCheckCondition(A, ...)   // if A is false, causes a fatal error and prints to the debugger (narrow)
+
+Like GLUT, pez makes it easy to create simple cross-platform OpenGL apps.  Unlike GLUT, pez never makes any OpenGL calls;
+it simply creates a window and runs a game loop for you.  It doesn't handle keyboard stuff or re-sizeable windows.
+
+Pez is written in ANSI C and natively supports Windows, Cocoa (Mac OS X), and X (Ubuntu).
+
+It's pretty damn simple.
+
+libpez is covered by the MIT license.
+
+ Philip Rideout, May 2010

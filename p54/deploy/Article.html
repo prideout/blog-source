@@ -1,0 +1,336 @@
+<a href="http://prideout.net/blog/p54/Toon2.png"><img src="http://prideout.net/blog/p54/Toon2-Thumb.png" alt="Cel Shader" style="margin-left:5px;margin-bottom:5px;" class="alignright size-medium wp-image-12" /></a>
+
+Some of my previous entries used the geometry shader (GS) to highlight certain triangle edges by passing new information to the fragment shader.  The GS can also be used generate long, thin quads along those edges; this lets you apply texturing for sketchy effects.  In the case of silhouette lines, you can create an anti-aliased border along the boundary of the model, without the cost of true multisampling.
+
+In this article, I'll show how to generate silhouettes using GLSL geometry shaders.  At the end of the article, I provide the complete demo code for drawing the dragon depicted here.  I tested the demo with Ubuntu (gcc), and Windows (Visual Studio 2010).
+
+<h2 id="classic">Old School Silhouettes</h2>
+
+<div id="easy_contents" class="easysmallcontents" >
+<ol>
+<li><a href="#classic">Old School Silhouettes</a></li>
+<li><a href="#adjacency">Computing Adjacency</a></li>
+<li><a href="#fins">Basic Fins</a></li>
+<li><a href="#antialiased">Antialiased Fins</a></li>
+<li><a href="#spine">The Spine Test</a></li>
+<li><a href="#overhang">Mind the Gap!</a></li>
+<li><a href="#bib">Further Reading</a></li>
+<li><a href="#downloads">Downloads</a></li>
+</ol>
+</div>
+
+Just for fun, I want to point out a classic two-pass method for generating silhouettes, used in the days before shaders.  I wouldn't recommend it nowadays; it does not highlight creases and ``core'' OpenGL no longer supports smooth/wide lines anyway.  This technique can be found in <i>Under the Shade of the Rendering Tree</i> by John Lander:
+
+<ol>
+<li>Draw front faces:
+<ul><li><b>glPolygonMode(GL_FRONT, GL_FILL)</b></li><li><b>glDepthFunc(GL_LESS)</b></li></ul></li>
+<li>Draw back faces:
+<ul><li><b>glPolygonMode(GL_BACK, GL_LINE)</b></li><li><b>glDepthFunc(GL_LEQUAL)</b></li></ul></li>
+</ol>
+
+Ah, brings back memories...
+
+<h2 id="adjacency">Computing Adjacency</h2>
+
+<img src="http://prideout.net/blog/p54/Adjacency.png" style="margin-left:5px" class="alignright size-medium wp-image-12" alt="GL_TRIANGLES_ADJACENCY" />
+
+To detect silhouettes and creases, the GS examines the facet normals of adjacent triangles.  So, we'll need to send down the verts using <b>GL_TRIANGLES_ADJACENCY</b>:
+
+<div style="width:450px">
+[cpp]
+glDrawElements(GL_TRIANGLES_ADJACENCY, // primitive type
+               triangleCount*6,        // index count
+               GL_UNSIGNED_SHORT,      // index type
+               0);                     // start index
+[/cpp]
+</div>
+
+Six verts per triangle seems like an egregious redundancy of data, but keep in mind that it enlarges your index VBO, not your attributes VBO.
+
+Typical mesh files don't include adjacency information, but it's easy enough to compute in your application.  A wonderfully simple data structure for algorithms like this is the <i>Half-Edge Table</i>.
+
+For low-level mesh algorithms, I enjoy using C99 rather than C++.  I find that avoiding STL makes life a bit easier when debugging, and it encourages me to use memory efficiently.  Here's a half-edge structure in C:
+
+[cpp]
+typedef struct HalfEdgeRec
+{
+    unsigned short Vert;      // Vertex index at the end of this half-edge
+    struct HalfEdgeRec* Twin; // Oppositely oriented adjacent half-edge
+    struct HalfEdgeRec* Next; // Next half-edge around the face
+} HalfEdge;
+[/cpp]
+
+If you've got a half-edge structure for your mesh, it's a simple linear-time algorithm to expand an index buffer to include adjacency information.  Check out the <a href="#downloads">downloads</a> section to see how I did it.
+
+By the way, you do need an associative array to build a half-edge table when loading model data from a traditional mesh file.  In C++, this is all too easy because of helpful libraries like <b>std::hash_map</b> and <a href="http://code.google.com/p/google-sparsehash/">Google's Sparse Hash</a>.  For C99, I find that <a href="http://judy.sourceforge.net/">Judy arrays</a> provide a compelling way of creating associative arrays.
+
+<h2 id="fins">Basic Fins</h2>
+
+Now that we've got preliminaries out of the way, let's start on the silhouette extrusion algorithm.  We'll start simple and  make enhancements in the coming sections.  We'll use this torus as the demo model.  The image on the left shows the starting point; the image on the right is our goal.
+<a href="http://prideout.net/blog/p54/TorusPlain.png" class="floatbox" title="Torus, with and without Silhouette">
+	<img src="http://prideout.net/blog/p54/TorusPlain-Thumb.png" alt="" />
+</a>
+
+Silhouette lines occur on the boundary between front-facing triangles and back-facing triangles.  Let's define a function that takes three triangle corners (in screen space), returning true for front-facing triangles.  To pull this off, we can take the cross product of two sides.  If the Z component of the result is positive, then it's front-facing.  Since we can ignore the X and Y components of the result, this reduces to:
+
+[glsl]
+bool IsFront(vec2 A, vec2 B, vec2 C)
+{
+    return 0 < (A.x * B.y - B.x * A.y) + (B.x * C.y - C.x * B.y) + (C.x * A.y - A.x * C.y);
+}
+[/glsl]
+
+Incidentally, the length of the cross-product is equal to twice the area of the triangle.  But I digress...
+
+The next function emits a long, thin quadrilateral between two points.  To do this, we'll add an <i>extrusion vector</i> to the two endpoints.  In the following snippet, <b>N</b> is the extrusion vector, computed by taking the perpendicular of the normalized vector between the two points, then scaling it by half the desired line width:
+
+[glsl]
+uniform float HalfWidth;
+
+void EmitEdge(vec2 P0, vec2 P1)
+{
+    vec2 V = normalize(P1 - P0);
+    vec2 N = vec2(-V.y, V.x) * HalfWidth;
+
+    gl_Position = vec4(P0 - N, 0, 1); EmitVertex();
+    gl_Position = vec4(P0 + N, 0, 1); EmitVertex();
+    gl_Position = vec4(P1 - N, 0, 1); EmitVertex();
+    gl_Position = vec4(P1 + N, 0, 1); EmitVertex();
+    EndPrimitive();
+}
+[/glsl]
+
+Next let's write <b>main()</b> for the geometry shader.  It checks if the current triangle is frontfacing, then emits a quad for each backfacing neighbor:
+
+[glsl]
+layout(triangles_adjacency) in;
+layout(triangle_strip, max_vertices = 12) out;
+
+void main()
+{
+    vec2 v0 = gl_in[0].gl_Position.xy;
+    vec2 v1 = gl_in[1].gl_Position.xy;
+    vec2 v2 = gl_in[2].gl_Position.xy;
+    vec2 v3 = gl_in[3].gl_Position.xy;
+    vec2 v4 = gl_in[4].gl_Position.xy;
+    vec2 v5 = gl_in[5].gl_Position.xy;
+    
+    if (IsFront(v0, v2, v4)) {
+        if (!IsFront(v0, v1, v2)) EmitEdge(v0, v2);
+        if (!IsFront(v2, v3, v4)) EmitEdge(v2, v4);
+        if (!IsFront(v0, v4, v5)) EmitEdge(v4, v0);
+    } 
+}
+[/glsl]
+
+Here's the result:
+<a href="http://prideout.net/blog/p54/TorusFins.png" class="floatbox" title="Torus with Fins">
+	<img src="http://prideout.net/blog/p54/TorusFins-Thumb.png" alt="" />
+</a>
+
+Not too pretty.  There are three problems with this silhouette:
+
+<ul>
+<li>The outer edge of the fin needs some antialiasing.</li>
+<li>We're only seeing the upper half of the fin.</li>
+<li>There's a gap between neighboring fins.</li>
+</ul>
+
+We'll address each of these issues in the coming sections.
+
+<h2 id="antialiased">Antialiased Fins</h2>
+
+First let's add some antialiasing to those fins.  To pull this off, we'll attach a distance-from-center value to each corner of the quad.  In the fragment shader, we can use these values to see how far the current pixel is from the edge.  If it's less than a couple pixels away, it fades the alpha value.  The <b>EmitEdge</b> function now becomes:
+
+[glsl highlight="1,9,11,13,15"]
+out float gDist;
+uniform float HalfWidth;
+
+void EmitEdge(vec2 P0, vec2 P1)
+{
+    vec2 V = normalize(P1 - P0);
+    vec2 N = vec2(-V.y, V.x) * HalfWidth;
+
+    gDist = +HalfWidth;
+    gl_Position = vec4(P0 - N, 0, 1); EmitVertex();
+    gDist = -HalfWidth;
+    gl_Position = vec4(P0 + N, 0, 1); EmitVertex();
+    gDist = +HalfWidth; 
+    gl_Position = vec4(P1 - N, 0, 1); EmitVertex();
+    gDist = -HalfWidth; 
+    gl_Position = vec4(P1 + N, 0, 1); EmitVertex();
+    EndPrimitive();
+}
+[/glsl]
+
+Next is the fragment shader, which uses the <b>tipLength</b> variable to represent the length of the desired alpha gradient.  We leverage GLSL's built-in <b>fwidth</b> function to prevent it from looking fuzzy when zoomed in:
+
+[glsl]
+in float gDist;
+out vec4 fColor;
+uniform float HalfWidth;
+const vec3 LineColor = vec3(0, 0, 0);
+
+void main()
+{
+    float alpha = 1.0;
+    float d = abs(gDist);
+    float tipLength = 2.0 * fwidth(d);
+    if (d > HalfWidth - tipLength)
+        alpha = 1.0 - (d - HalfWidth + tipLength) / tipLength;
+
+    fColor = vec4(LineColor, alpha);
+}
+[/glsl]
+
+Here's the result:
+<a href="http://prideout.net/blog/p54/TorusAa.png" class="floatbox" title="Torus with Antialiased Fins">
+	<img src="http://prideout.net/blog/p54/TorusAa-Thumb.png" alt="" />
+</a>
+
+<h2 id="spine">The Spine Test</h2>
+
+We extruded in both directions, so why are we seeing only half of the fin?  The issue lies with depth testing.  We could simply disable all depth testing during the silhouette pass, but then we'd see creases from the opposite side of the model.  The correct trick is to perform depth testing along the centerline of the quad, rather than at the current fragment.  This method is called <i>spine testing</i>, and it was introduced by a recent paper from Forrester Cole and Adam Finkelstein.
+
+In order to perform custom depth testing, we'll need to do an early Z pass.  An early Z pass is often useful for other reasons, especially for scenes with high depth complexity.  In our demo program, we generate a <i>G-Buffer</i> containing normals and depths:
+
+<img src="http://prideout.net/blog/p54/GBuffer.png" alt="G-Buffer" style="border:0" />
+
+The normals are used for per-pixel lighting while the depths are used for spine testing.  The fragment shader for G-Buffer generation is exceedingly simple; it simply transforms the normals into the [0,1] range and writes them out:
+
+[glsl]
+in vec3 vNormal;
+out vec3 fColor;
+
+void main()
+{
+    fColor = (vNormal + 1.0) * 0.5;
+}
+[/glsl]
+
+When rendering silhouette lines, the fragment shader will need texture coordinates for the spine.  The geometry shader comes to the rescue again.  It simply transforms the device coordinates of the quad's endpoints into texture coordinates, then writes them out to a new output variable:
+
+[glsl highlight="2,10,15"]
+out float gDist;
+out vec2 gSpine;
+uniform float HalfWidth;
+
+void EmitEdge(vec2 P0, vec2 P1)
+{
+    vec2 V = normalize(P1 - P0);
+    vec2 N = vec2(-V.y, V.x) * HalfWidth;
+
+    gSpine = (P0 + 1.0) * 0.5;
+    gDist = +HalfWidth;
+    gl_Position = vec4(P0 - N, 0, 1); EmitVertex();
+    gDist = -HalfWidth;
+    gl_Position = vec4(P0 + N, 0, 1); EmitVertex();
+    gSpine = (P1 + 1.0) * 0.5;
+    gDist = +HalfWidth; 
+    gl_Position = vec4(P1 - N, 0, 1); EmitVertex();
+    gDist = -HalfWidth; 
+    gl_Position = vec4(P1 + N, 0, 1); EmitVertex();
+    EndPrimitive();
+}
+[/glsl]
+
+Next we enhance the fragment shader to issue a <b>discard</b> for fragments that fail the custom depth test:
+
+[glsl highlight="10,11,12,13"]
+in float gDist;
+in vec2 gSpine;
+out vec4 fColor;
+uniform float HalfWidth;
+uniform sampler2D DepthSampler;
+uniform vec2 Size;
+
+void main()
+{
+    vec2 texCoord = gSpine;
+    float depth = texture2D(DepthSampler, texCoord).r;
+    if (depth < gl_FragCoord.z)
+        discard;
+
+    float alpha = 1.0;
+    float d = abs(gDist);
+    float tipLength = 2.0 * fwidth(d);
+    if (d > HalfWidth - tipLength)
+        alpha = 1.0 - (d - HalfWidth + tipLength) / tipLength;
+
+    fColor = vec4(0, 0, 0, alpha);
+}
+[/glsl]
+
+Here's the result.  Note that the fin now extends below the contour, allowing you to see the AA on both ends.
+<a href="http://prideout.net/blog/p54/TorusSpine.png" class="floatbox" title="Torus with the Spine Test">
+	<img src="http://prideout.net/blog/p54/TorusSpine-Thumb.png" alt="" />
+</a>
+
+<h2 id="overhang">Mind the Gap!</h2>
+
+Next let's fill in those gaps, creating the illusion of a single, seamless line.  Some researchers create new triangles on either end of the fin, using vertex normals to determine the shape of those triangles.  In practice I found this tricky to work with, especially since vertex normals are usually intended for 3D lighting, not screen-space effects.  I found it easier to simply extend the lengths of the quads that I'm already generating.  Sure, this causes too much overlap in some places, but it doesn't seem to hurt the final image quality much.  The percentage by which to extend the fin length is controlled via the <b>OverhangLength</b> shader uniform in the following snippet:
+
+[glsl highlight="4,8,14,16,19,21"]
+out float gDist;
+out vec2 gSpine;
+uniform float HalfWidth;
+uniform float OverhangLength;
+
+void EmitEdge(vec2 P0, vec2 P1)
+{
+    vec2 E = OverhangLength * (P1 - P0);
+    vec2 V = normalize(E);
+    vec2 N = vec2(-V.y, V.x) * HalfWidth;
+
+    gSpine = (P0 + 1.0) * 0.5;
+    gDist = +HalfWidth;
+    gl_Position = vec4(P0 - N - E, 0, 1); EmitVertex();
+    gDist = -HalfWidth;
+    gl_Position = vec4(P0 + N - E, 0, 1); EmitVertex();
+    gSpine = (P1 + 1.0) * 0.5;
+    gDist = +HalfWidth; 
+    gl_Position = vec4(P1 - N + E, 0, 1); EmitVertex();
+    gDist = -HalfWidth; 
+    gl_Position = vec4(P1 + N + E, 0, 1); EmitVertex();
+    EndPrimitive();
+}
+[/glsl]
+
+Here's the final result:
+<a href="http://prideout.net/blog/p54/TorusOverhang.png" class="floatbox" title="Torus with Extended Fins">
+	<img src="http://prideout.net/blog/p54/TorusOverhang-Thumb.png" alt="" />
+</a>
+
+<h2 id="bib">Further Reading</h2>
+
+These are some of the resources that gave me ideas for this blog post:
+
+<ul>
+<li>
+There's a nice <a href="http://www.gamasutra.com/view/feature/1644/sponsored_feature_inking_the_.php?print=1">article</a> at Gamasutra about silhouette rendering with DirectX 10, written by an old colleague of mine, Josh Doss.
+</li>
+<li>
+Achieving AA by drawing lines on top of the model is called <i>edge overdraw</i>, which was written about in this <a href="http://research.microsoft.com/en-us/um/people/hoppe/overdraw.pdf">2001 paper</a> by Hughes Hoppe and others.
+</li>
+<li>
+My silhouette lines are centered at the boundary, rather than extending only in the outwards direction.  To achieve this, I use the ``spine test'', which was introduced in a nice paper entitled <a href="http://www.cs.princeton.edu/gfx/pubs/Cole_2010_TFM/">Two Fast Methods for High-Quality Line Visibility</a>, by Forrester Cole and Adam Finkelstein.
+</li>
+<li>
+To learn how to generate texture coordinates for fins (e.g., sketchy lines), and a different way of dealing with the gap between fins, check out a paper entitled <i>Single Pass GPU Stylized Edges</i>, by Hermosilla and V&aacute;zquez.
+</li>
+</ul>
+
+<h2 id="downloads">Downloads</h2>
+
+The demo code uses a subset of the <a href="http://prideout.net/blog/?p=36">Pez ecosystem</a>, which is included in the zip below.
+
+<ul>
+<li><a href="http://prideout.net/blog/p54/Silhouette.zip">Silhouette.zip</a></li>
+<li><a href="http://prideout.net/blog/p54/Silhouette.c">Silhouette.c</a></li>
+<li><a href="http://prideout.net/blog/p54/Silhouette.glsl">Silhouette.glsl</a></li>
+<li><a href="http://prideout.net/blog/p54/Adjacency.c">Adjacency.c</a></li>
+</ul>
+
+I consider this code to be on the public domain.
+
+<img src="http://prideout.net/blog/p54/Diffuse.png" alt="Chinese Dragon" style="border:0" />

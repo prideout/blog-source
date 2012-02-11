@@ -1,0 +1,36 @@
+digraph Curl {
+
+    node [fillcolor=lightgray,style=filled];
+
+    Obstacles [fillcolor="#ff7700",URL="http://prideout.net/blog/p63/Obstacles.png"];
+    RawBuoyancy [fillcolor="#ff7700",URL="http://prideout.net/blog/p63/RawBuoyancy.png"];
+    RawTurbulence [fillcolor="#ff7700",URL="http://prideout.net/blog/p63/RawTurbulence.png"];
+    TurbulenceIntensity [fillcolor="#ff7700",URL="http://prideout.net/blog/p63/TurbulenceIntensity.png"];
+    Velocity [fillcolor="#77ff00",URL="http://prideout.net/blog/p63/Velocity.png"];
+    
+    DistanceField [URL="http://prideout.net/blog/p63/DistanceField.png"];
+    DistanceGradient [URL="http://prideout.net/blog/p63/DistanceGradient.png"];
+    ModulatedTurbulence [URL="http://prideout.net/blog/p63/ModulatedTurbulence.png"];
+    FinalTurbulence [URL="http://prideout.net/blog/p63/FinalTurbulence.png"];
+    FinalBuoyancy [URL="http://prideout.net/blog/p63/FinalBuoyancy.png"];
+    FinalPotential [URL="http://prideout.net/blog/p63/FinalPotential.png"];
+    
+
+    Obstacles -> DistanceField;
+    DistanceField -> DistanceGradient;
+    DistanceField -> FinalBuoyancy;
+    DistanceGradient -> FinalBuoyancy;
+    RawBuoyancy -> FinalBuoyancy;
+    
+    RawTurbulence -> ModulatedTurbulence;
+    TurbulenceIntensity -> ModulatedTurbulence;
+    ModulatedTurbulence -> FinalTurbulence;
+    DistanceField -> FinalTurbulence;
+    DistanceGradient -> FinalTurbulence;
+    
+    FinalTurbulence -> FinalPotential;
+    FinalBuoyancy -> FinalPotential;
+    
+    edge [label=" curl"];
+    FinalPotential -> Velocity;
+}

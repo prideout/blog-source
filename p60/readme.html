@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+<title>Volume Splat Demo</title>
+<link href="doc/bluestyle.css" rel="stylesheet" />
+</head>
+
+<body>
+
+<p><img alt="[Splat Image]" src="doc/Thumbnail.png" /></p>
+
+<h1>Volume Splat Demo</h1>
+
+<p>
+<a href="http://prideout.net/blog/?p=60">http://prideout.net/blog/?p=60</a>
+</p>
+
+<h3>Download and Install CMake</h3>
+
+You can get it from here:
+
+<pre>
+   http://www.cmake.org/cmake/resources/software.html
+</pre>
+
+If you're on Ubuntu, don't bother with the web site; just type this:
+
+<pre>
+   > sudo apt-get install CMake
+</pre>
+
+<h3>For Visual Studio</h3>
+
+<pre>
+   > mkdir build
+   > cd build
+   > cmake .. -G "Visual Studio 10"  
+   > Splat.sln
+   > Right-click "Splat" in Solution Explorer and make it your StartUp Project.
+   > Press F5
+</pre>
+
+If you're using an older Visual Studio, just run "cmake" (no arguments) to see a list of options.
+For example, a 2005 project can be built like this:
+
+<pre>
+   > cmake .. -G "Visual Studio 8 2005"
+</pre>
+
+<h3>Linux or Mac, from Command Line</h3>
+
+<pre>
+   > mkdir build
+   > cd build
+   > cmake ..
+   > make
+   > ./Splat
+</pre>
+
+<h3>Mac with Xcode</h3>
+
+<pre>
+   > cmake . -G "Xcode"
+   > open Splat.xcodeproj
+   > Press Command + Enter
+</pre>
+
+<h3>For Debugging with GDB</h3>
+
+<pre>
+   > mkdir build
+   > cd build
+   > cmake .. -DCMAKE_BUILD_TYPE=Debug
+   > make VERBOSE=1
+   > gdb Splat
+</pre>
+
+</body>
+</html>

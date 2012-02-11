@@ -1,0 +1,153 @@
+<iframe src="http://player.vimeo.com/video/17032066?title=0&amp;byline=0&amp;portrait=0&amp;autoplay=1&amp;loop=1" width="150" height="265" frameborder="0" style="margin-left:10px;margin-bottom:5px;" class="alignright size-medium wp-image-12"></iframe>
+
+I finally wrote my first fluid simulation: two-dimensional smoke advected with GLSL fragment shaders.  It was great fun, but let me warn you: it's all too easy to drain away vast swaths of your life while tuning the millions of various parameters, just to get the right effect.  It's also rather addictive.
+
+For my implementation, I used the classic Mark Harris article from <i>GPU Gems 1</i> as my trusty guide.  His article is available online <a href="http://http.developer.nvidia.com/GPUGems/gpugems_ch38.html">here</a>.  Ah, 2004 seems like it was only yesterday...
+
+Mark's article is about a method called <b>Eulerian Grid</b>.  In general, fluid simulation algorithms can be divided into three categories:
+
+<dl>
+
+<dt><b>Eulerian</b></dt>
+<dd><p>Divides a cuboid of space into cells.  Each cell contains a velocity vector and other information, such as density and temperature.</p></dd>
+
+<dt><b>Lagrangian</b></dt>
+<dd><p>Particle-based physics, not as effective as Eulerian Grid for modeling "swirlies".  However, particles are much better for expansive regions, since they aren't restricted to a grid.</p></dd>
+
+<dt><b>Hybrid</b></dt>
+<dd><p>For large worlds that have specific regions where swirlies are desirable, use Lagrangian everywhere, but also place Eulerian grids in the regions of interest.  When particles enter those regions, they become influenced by the grid's velocity vectors.  <a href="http://www.jcohen.name/">Jonathan Cohen</a> has done some interesting work in this area.</p></dd>
+
+</dl>
+
+Regardless of the method, the Navier-Stokes equation is at the root of it all.  I won't cover it here since you can read about it from a trillion different sources, all of which are far more authoritative than this blog.  I'm focusing on implementation.
+
+After reading Mark's article, I found it useful to create a quick graphviz diagram for all the image processing:
+
+<img src="http://prideout.net/blog/p58/Fluid-Diagram.png" alt="GPU Evaluation of Eulerian Grid" />
+
+It's not as complicated as it looks.  The processing stages are all drawing full-screen quads with surprisingly simple fragment shaders.  There are a total of three floating-point surfaces being processed: <b>Velocity</b> (a 2-component texture), <b>Density</b> (a 1-component texture), and <b>Temperature</b> (another 1-component texture).
+
+In practice, you'll need six surfaces instead of three; this allows ping-ponging between render targets and source textures.  In some cases you can use blending instead; those stages are shown in green.
+
+The processing stages are:
+
+<dl>
+
+<dt><b>Advect</b></dt>
+<dd><p>Copies a quantity from a neighboring cell into the current cell; projects the current velocity backwards to find the incoming value.  This is used for any type of quantity, including density, temperature, and velocity itself.</p></dd>
+
+<dt><b>Apply Impulse</b></dt>
+<dd><p>This stage accounts for external forces, such as user interaction or the immortal candle in my simulation.</p></dd>
+
+<dt><b>Apply Buoyancy</b></dt>
+<dd><p>For smoke effects, temperature can influence velocity by making it rise.  In my implementation, I also apply the weight of the smoke in this stage; high densities in cool regions will sink.</p></dd>
+
+<dt><b>Compute Divergence</b></dt>
+<dd><p>This stage computes values for a temporary surface (think of it as "scratch space") that's required for computing the pressure component of the Navier-Stokes equation.</p></dd>
+
+<dt><b>Jacobi Iteration</b></dt>
+<dd><p>This is the real meat of the algorithm; it requires many iterations to converge to a good pressure value.  The number of iterations is one of the many tweakables that I referred to at the beginning of this post, and I found that ~40 iterations was a reasonable number.</p></dd>
+
+<dt><b>Subtract Gradient</b></dt>
+<dd><p>In this stage, the gradient of the pressure gets subtracted from velocity.</p></dd>
+
+</dl>
+
+The above list is by no means set in stone -- there are <i>many</i> ways to create a fluid simulation.  For example, the <b>Buoyancy</b> stage is not necessary for liquids.  Also, many simulations have a <b>Vorticity Confinement</b> stage to better preserve curliness, which I decided to omit.  I also left out a <b>Viscous Diffusion</b> stage, since it's not very useful for smoke.
+
+Dealing with obstacles is tricky.  One way of enforcing boundary conditions is adding a new operation after every processing stage.  The new operation executes a special draw call that only touches the pixels that need to be tweaked to keep Navier-Stokes happy.
+
+Alternatively, you can perform boundary enforcement within your existing fragment shaders.  This adds costly texture lookups, but makes it easier to handle dynamic boundaries, and it simplifies your top-level image processing logic.  Here's the new diagram that takes obstacles into account: (alas, we can no longer use blending for <b>SubtractGradient</b>)
+
+<img src="http://prideout.net/blog/p58/Trim-Diagram.png" alt="GPU Evaluation of Eulerian Grid" />
+
+Note that I added a new surface called <b>Obstacles</b>.  It has three components: the red component is essentially a boolean for solid versus empty, and the green/blue channels represent the obstacle's velocity.
+
+For my C/C++ code, I defined tiny POD structures for the various surfaces, and simple functions for each processing stage.  This makes the top-level rendering routine easy to follow:
+
+[cpp]
+struct Surface {
+    GLuint FboHandle;
+    GLuint TextureHandle;
+    int NumComponents;
+};
+
+struct Slab {
+    Surface Ping;
+    Surface Pong;
+};
+
+Slab Velocity, Density, Pressure, Temperature;
+Surface Divergence, Obstacles;
+
+// [snip]
+
+glViewport(0, 0, GridWidth, GridHeight);
+
+Advect(Velocity.Ping, Velocity.Ping, Obstacles, Velocity.Pong, VelocityDissipation);
+SwapSurfaces(&Velocity);
+
+Advect(Velocity.Ping, Temperature.Ping, Obstacles, Temperature.Pong, TemperatureDissipation);
+SwapSurfaces(&Temperature);
+
+Advect(Velocity.Ping, Density.Ping, Obstacles, Density.Pong, DensityDissipation);
+SwapSurfaces(&Density);
+
+ApplyBuoyancy(Velocity.Ping, Temperature.Ping, Density.Ping, Velocity.Pong);
+SwapSurfaces(&Velocity);
+
+ApplyImpulse(Temperature.Ping, ImpulsePosition, ImpulseTemperature);
+ApplyImpulse(Density.Ping, ImpulsePosition, ImpulseDensity);
+
+ComputeDivergence(Velocity.Ping, Obstacles, Divergence);
+ClearSurface(Pressure.Ping, 0);
+
+for (int i = 0; i < NumJacobiIterations; ++i) {
+    Jacobi(Pressure.Ping, Divergence, Obstacles, Pressure.Pong);
+    SwapSurfaces(&Pressure);
+}
+
+SubtractGradient(Velocity.Ping, Pressure.Ping, Obstacles, Velocity.Pong);
+SwapSurfaces(&Velocity);
+[/cpp]
+
+For my full source code, you can download the zip at the end of this article, but I'll go ahead and give you a peek at the fragment shader for one of the processing stages.  Like I said earlier, these shaders are mathematically simple on their own.  I bet most of the performance cost is in the texture lookups, not the math.  Here's the shader for the <b>Advect</b> stage:
+
+[glsl]
+out vec4 FragColor;
+
+uniform sampler2D VelocityTexture;
+uniform sampler2D SourceTexture;
+uniform sampler2D Obstacles;
+
+uniform vec2 InverseSize;
+uniform float TimeStep;
+uniform float Dissipation;
+
+void main()
+{
+    vec2 fragCoord = gl_FragCoord.xy;
+    float solid = texture(Obstacles, InverseSize * fragCoord).x;
+    if (solid > 0) {
+        FragColor = vec4(0);
+        return;
+    }
+
+    vec2 u = texture(VelocityTexture, InverseSize * fragCoord).xy;
+    vec2 coord = InverseSize * (fragCoord - TimeStep * u);
+    FragColor = Dissipation * texture(SourceTexture, coord);
+}
+[/glsl]
+
+<h2 id="downloads">Downloads</h2><a href="http://prideout.net/blog/p58/Screenshot.png" class="floatbox" title="Smoke"><img src="http://prideout.net/blog/p58/ScreenshotThumb.png" alt="Smoke" style="margin-left:15px;margin-bottom:5px;" class="alignright size-medium wp-image-12" /></a>The demo code uses a subset of the <a href="http://prideout.net/blog/?p=36">Pez ecosystem</a>, which is included in the zip below.  It can be built with Visual Studio 2010 or gcc.  For the latter, I provided a <a href="http://code.google.com/p/waf/">WAF</a> script instead of a makefile.
+
+<ul>
+<li><a href="http://prideout.net/blog/p58/Fluid.zip">Fluid.zip</a></li>
+<li><a href="http://prideout.net/blog/p58/Fluid.c">Fluid.c</a></li>
+<li><a href="http://prideout.net/blog/p58/Fluid.glsl">Fluid.glsl</a></li>
+<li><a href="http://prideout.net/blog/p58/Fluid.h">Fluid.h</a></li>
+<li><a href="http://prideout.net/blog/p58/SlabOps.c">SlabOps.c</a></li>
+</ul>
+
+I consider this code to be on the public domain.  Enjoy!
+ 

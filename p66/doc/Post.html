@@ -1,0 +1,112 @@
+<iframe src="http://player.vimeo.com/video/19114909?title=0&amp;byline=0&amp;portrait=0&amp;autoplay=0&amp;loop=1" width="250" height="250" frameborder="0" style="margin-left:10px;margin-bottom:5px;" class="alignright size-medium wp-image-12"></iframe>
+
+I finally extended my OpenGL-based Eulerian fluid simulation to 3D.  It's not as pretty as Miles Macklin's stuff (<a href="https://mmack.wordpress.com/2010/11/01/adventures-in-fluid-simulation/">here</a>), but at least it runs at interactive rates on my GeForce GTS 450, which isn't exactly top-of-the-line.  My original blog entry, <a href="http://prideout.net/blog/?p=58">"Simple Fluid Simulation"</a>, goes into much more detail than this post.
+
+I thought it would be fun to invert buoyancy and gravity to make it look more like liquid nitrogen than smoke.  The source code can be downloaded at the end of this post.
+
+Extending to three dimensions was fairly straightforward.  I'm still using a half-float format for my velocity texture, but I've obviously made it 3D and changed its format to <b>GL_RGB16F</b> (previously it was <b>GL_RG16F</b>).
+
+The volumetric image processing is achieved by ping-ponging layered FBOs, using instanced rendering to update all slices of a volume with a single draw call and a tiny 4-vert VBO, like this:
+
+[cpp]
+glDrawArraysInstanced(GL_TRIANGLE_STRIP, 0, 4, numLayers);
+[/cpp]
+
+Here are the vertex and geometry shaders that I use to make this work:
+
+[glsl]
+-- Vertex Shader
+
+in vec4 Position;
+out int vInstance;
+
+void main()
+{
+    gl_Position = Position;
+    vInstance = gl_InstanceID;
+}
+
+-- Geometry Shader
+
+layout(triangles) in;
+layout(triangle_strip, max_vertices = 3) out;
+ 
+in int vInstance[3];
+out float gLayer;
+ 
+uniform float InverseSize;
+ 
+void main()
+{
+    gl_Layer = vInstance[0];
+    gLayer = float(gl_Layer) + 0.5;
+    gl_Position = gl_in[0].gl_Position;
+    EmitVertex();
+    gl_Position = gl_in[1].gl_Position;
+    EmitVertex();
+    gl_Position = gl_in[2].gl_Position;
+    EmitVertex();
+    EndPrimitive();
+}
+[/glsl]
+
+Note that I offset the layer by <b>0.5</b>.  I'm too lazy to pass the entire texture coordinate to the fragment shader, so my fragment shader uses a <b>gl_FragCoord</b> trick to get to the right texture coordinate:
+
+[glsl]
+-- Fragment Shader
+
+uniform vec3 InverseSize;
+uniform sampler3D VelocityTexture;
+
+void main()
+{
+    vec3 tc = InverseSize * vec3(gl_FragCoord.xy, gLayer);
+    vec3 velocity = texture(VelocityTexture, tc).xyz;
+    // ...
+}
+[/glsl]
+
+Since the fragment shader gets evaluated at pixel centers, I needed the 0.5 offset on the layer coordinate to prevent the fluid from "drifting" along the Z axis.
+
+The fragment shaders are otherwise pretty damn similar to their 2D counterparts.  As an example, I'll show you how I extended the <b>SubtractGradient</b> shader, which computes the gradient vector for pressure.  Previously it did something like this:
+
+[glsl]
+float N = texelFetchOffset(Pressure, T, 0, ivec2(0, 1)).r;
+float S = texelFetchOffset(Pressure, T, 0, ivec2(0, -1)).r;
+float E = texelFetchOffset(Pressure, T, 0, ivec2(1, 0)).r;
+float W = texelFetchOffset(Pressure, T, 0, ivec2(-1, 0)).r;
+vec2 oldVelocity = texelFetch(Velocity, T, 0).xy;
+vec2 gradient = vec2(E - W, N - S) * GradientScale;
+vec2 newVelocity = oldVelocity - gradient;
+[/glsl]
+
+The new code does something like this:
+
+[glsl]
+float N = texelFetchOffset(Pressure, T, 0, ivec3(0, 1, 0)).r;
+float S = texelFetchOffset(Pressure, T, 0, ivec3(0, -1, 0)).r;
+float E = texelFetchOffset(Pressure, T, 0, ivec3(1, 0, 0)).r;
+float W = texelFetchOffset(Pressure, T, 0, ivec3(-1, 0, 0)).r;
+float U = texelFetchOffset(Pressure, T, 0, ivec3(0, 0, 1)).r;
+float D = texelFetchOffset(Pressure, T, 0, ivec3(0, 0, -1)).r;
+vec3 oldVelocity = texelFetch(Velocity, T, 0).xyz;
+vec3 gradient = vec3(E - W, N - S, U - D) * GradientScale;
+vec3 newVelocity = oldVelocity - gradient;
+[/glsl]
+
+Simple!
+
+<h2 id="downloads">Downloads</h2><a href="http://prideout.net/blog/p66/Screenshot.png" class="floatbox" title="Liquid Nitrogen"><img src="http://prideout.net/blog/p66/ScreenshotThumb.png" alt="Liquid Nitrogen" style="margin-left:15px;margin-bottom:5px;" class="alignright size-medium wp-image-12" /></a>
+
+I've tested the code with Visual Studio 2010.  It uses <a href="http://www.cmake.org/cmake/resources/software.html">CMake</a> for the build system.  If you have trouble building it or running it, let me warn you that you need a decent graphics card and decent OpenGL drivers.
+
+<ul>
+<li><a href="http://prideout.net/blog/p66/fluid3d.zip">fluid3d.zip</a></li>
+<li><a href="http://prideout.net/blog/p66/Raycast.glsl">Raycast.glsl</a></li>
+<li><a href="http://prideout.net/blog/p66/Fluid.glsl">Fluid.glsl</a></li>
+<li><a href="http://prideout.net/blog/p66/Fluid3d.cpp">Fluid3d.cpp</a></li>
+<li><a href="http://prideout.net/blog/p66/Utility.cpp">Utility.cpp</a></li>
+</ul>
+
+I consider this code to be on the public domain.  Enjoy!
+ 

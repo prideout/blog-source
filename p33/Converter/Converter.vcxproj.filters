@@ -1,0 +1,85 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="Source Files">
+      <UniqueIdentifier>{4FC737F1-C7A5-4376-A066-2A32D752A2FF}</UniqueIdentifier>
+      <Extensions>cpp;c;cc;cxx;def;odl;idl;hpj;bat;asm;asmx</Extensions>
+    </Filter>
+    <Filter Include="OpenCTM">
+      <UniqueIdentifier>{49bd3ab9-2037-4ec7-9d3e-1dcccf1a6bdb}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="LZMA">
+      <UniqueIdentifier>{48a6f681-c27f-400d-a462-cd511ab070c8}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="openctm\compressMG1.c">
+      <Filter>OpenCTM</Filter>
+    </ClCompile>
+    <ClCompile Include="openctm\compressMG2.c">
+      <Filter>OpenCTM</Filter>
+    </ClCompile>
+    <ClCompile Include="openctm\compressRAW.c">
+      <Filter>OpenCTM</Filter>
+    </ClCompile>
+    <ClCompile Include="openctm\openctm.c">
+      <Filter>OpenCTM</Filter>
+    </ClCompile>
+    <ClCompile Include="openctm\stream.c">
+      <Filter>OpenCTM</Filter>
+    </ClCompile>
+    <ClCompile Include="liblzma\Alloc.c">
+      <Filter>LZMA</Filter>
+    </ClCompile>
+    <ClCompile Include="liblzma\LzFind.c">
+      <Filter>LZMA</Filter>
+    </ClCompile>
+    <ClCompile Include="liblzma\LzmaDec.c">
+      <Filter>LZMA</Filter>
+    </ClCompile>
+    <ClCompile Include="liblzma\LzmaEnc.c">
+      <Filter>LZMA</Filter>
+    </ClCompile>
+    <ClCompile Include="liblzma\LzmaLib.c">
+      <Filter>LZMA</Filter>
+    </ClCompile>
+    <ClCompile Include="Converter.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="openctm\internal.h">
+      <Filter>OpenCTM</Filter>
+    </ClInclude>
+    <ClInclude Include="openctm\openctm.h">
+      <Filter>OpenCTM</Filter>
+    </ClInclude>
+    <ClInclude Include="openctm\openctmpp.h">
+      <Filter>OpenCTM</Filter>
+    </ClInclude>
+    <ClInclude Include="liblzma\Alloc.h">
+      <Filter>LZMA</Filter>
+    </ClInclude>
+    <ClInclude Include="liblzma\LzFind.h">
+      <Filter>LZMA</Filter>
+    </ClInclude>
+    <ClInclude Include="liblzma\LzHash.h">
+      <Filter>LZMA</Filter>
+    </ClInclude>
+    <ClInclude Include="liblzma\LzmaDec.h">
+      <Filter>LZMA</Filter>
+    </ClInclude>
+    <ClInclude Include="liblzma\LzmaEnc.h">
+      <Filter>LZMA</Filter>
+    </ClInclude>
+    <ClInclude Include="liblzma\LzmaLib.h">
+      <Filter>LZMA</Filter>
+    </ClInclude>
+    <ClInclude Include="liblzma\NameMangle.h">
+      <Filter>LZMA</Filter>
+    </ClInclude>
+    <ClInclude Include="liblzma\Types.h">
+      <Filter>LZMA</Filter>
+    </ClInclude>
+  </ItemGroup>
+</Project>

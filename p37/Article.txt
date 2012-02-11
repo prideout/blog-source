@@ -1,0 +1,30 @@
+Amazon has replaced the <i>Pre-order</i> button for my book with <i>Add to Cart</i>.  To celebrate, I created a word cloud of the entire book using <a href="http://wordle.net">wordle.net</a> and a python script.  Here's the word cloud:
+
+<img src="http://prideout.net/blog/p37/iPhone2.png" alt="Word cloud of 'iPhone 3D Programming'"/>
+
+I love that "API" got nestled into "ES".  To create the word cloud, I first ran a little python script against the book's DocBook source.  The script simply extracts content from <b>para</b> elements.  If I don't do this, the word cloud contains all the sample code and represents words like <b>const</b> in huge, overwhelming text.  (I tried it, trust me.)  Anyway here's the script:
+
+[python]
+from xml.dom.minidom import parse
+import codecs
+
+def getText(nodelist):
+    rc = ""
+    for node in nodelist:
+        if node.nodeType == node.TEXT_NODE:
+            rc = rc + node.data
+    return rc
+
+f = codecs.open( "wordle.txt", "w", "utf-8" )
+
+for i in xrange(0, 10):
+    filename = "ch%02d.xml" % i
+    tree = parse(filename)
+    paras = tree.getElementsByTagName("para")
+    for para in paras:
+        f.write(getText(para.childNodes))
+
+print "wordle.txt has been dumped"
+[/python]
+
+After running the script, I simply pasted the resulting text file into wordle.net.

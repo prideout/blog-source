@@ -1,0 +1,286 @@
+<div id="easy_contents" class="easysmallcontents" >
+<ol>
+<li><a href="#simple-example">Simple Example</a></li>
+<li><a href="#ignored-text">Ignored Text</a></li>
+<li><a href="#error-handling">Error Handling and Shader Key Matching</a></li>
+<li><a href="#directive-mapping">Directive Mapping</a></li>
+<li><a href="#download">Download</a></li>
+</ol>
+</div>
+
+Maybe you've seen my post <a href="http://prideout.net/blog/?p=1">Lua as an Effect Format</a>.  To recap, you'd like to avoid creating a separate file for every friggin' shader in your OpenGL program, especially with the advent of purely shader-based OpenGL and the new programmable stages in OpenGL 4.0.  You'd also like to avoid big frameworks that attempt to accommodate other API's like DirectX.
+
+So, you need a lightweight solution that can organize your shader strings, load them up in a convenient manner, and automatically prepend <b>#line</b> directives.  Not all developers like to use Lua.  To that end, I wrote an "OpenGL Shader Wrangler" (GLSW), a tiny library that does the following:
+
+<ul>
+<li>Chops up simple "effect" files into lists of strings</li>
+<li>Automatically prepends shaders with <b>#line</b> to enable proper error reporting</li>
+<li>Optionally prepends shader directives like <b>#version</b> and <b>#extension</b></li>
+<li>Associates each shader with a quasi-hierarchical path called a <i>shader key</i></li>
+</ul>
+
+The OpenGL Shader Wrangler is covered by the MIT license.  It's written in ANSI C and consists of four source files:
+
+<ul>
+<li><a href="http://prideout.net/blog/glsw/glsw.h">glsw.h</a></li>
+<li><a href="http://prideout.net/blog/glsw/glsw.c">glsw.c</a></li>
+<li><a href="http://prideout.net/blog/glsw/bstrlib.h">bstrlib.h</a></li>
+<li><a href="http://prideout.net/blog/glsw/bstrlib.c">bstrlib.c</a></li>
+</ul>
+
+Those last two files are from Paul Hsieh's <a href="http://bstring.sourceforge.net/">Better String Library</a>, which is a nice substitute for the classic (and unsafe) string functions like <b>strcat</b> and <b>sprintf</b>.
+
+GLSW has no dependencies on OpenGL; it's just a string manager.  The API consists of only six functions:
+
+[cpp]
+int glswInit();
+int glswShutdown();
+int glswSetPath(const char* pathPrefix, const char* pathSuffix);
+const char* glswGetShader(const char* effectKey);
+const char* glswGetError();
+int glswAddDirectiveToken(const char* token, const char* directive);
+[/cpp]
+
+In every function, a non-zero return value indicates success.  I'll show you some examples shortly, but first let's establish a vocabulary, some of which is borrowed from my Lua post:
+
+<dl>
+
+  <dt>effect</dt>
+  <dd><p>Simple text file that contains a bundle of shaders in any combination.  For example, an effect might have 3 vertex shaders and 1 fragment shader.  It might have 0 vertex shaders, or it might contain only tessellation shaders.  Effects should not be confused with OpenGL program objects.  A program object is a set of shaders that are linked together; an effect is just a grouping of various shader strings.</p></dd>
+
+  <dt>shader key</dt>
+  <dd><p>Identifier for a shader consisting of alphanumeric characters and periods.  In a way, the periods serve as path separators, and the shader key is a path into a simple hierarchy of your own design.  However, GLSW does not maintain a hierarchy; it stores shaders in a flat list.</p></dd>
+
+  <dt>effect key</dt>
+  <dd><p>Same as a shader key, but prefaced with a token for the effect.  Your C/C++ code uses an effect key when requesting a certain shader string.</p></dd>
+
+  <dt>token</dt>
+  <dd><p>Contiguous sequence of alphanumeric characters in a shader key (or effect key) delimited by periods.</p></dd>
+
+  <dt>section divider</dt>
+  <dd><p>Any line in an effect file that starts with two dash characters (&#45;&#45;).  If the dashes are followed by a shader key, then all the text until the next section divider officially belongs to the corresponding shader.</p></dd>
+
+  <dt>directive</dt>
+  <dd><p>Any line of GLSL code that starts with a pound (#) symbol.</p></dd>
+
+</dl>
+
+Here's an example effect key with four tokens:
+
+<img alt="" src="http://prideout.net/blog/wp-content/uploads/2010/04/EffectKey.png"/>
+
+In the above example, I placed the shader stage in the second token and the API version in the third token.  You aren't required to arrange your shader keys in this way.  The only requirement is that the first token corresponds to the effect file.  You don't need to use the <b>GL3</b> notation for your version tokens either; in fact, you don't have to include a version token at all.  The onus is on you to create a consistent hierarchy and naming convention.
+
+<h2 id="simple-example">Simple Example</h2>
+
+Here's a text file called <b>Blit.glsl</b>:
+
+[text]
+-- Vertex
+
+in vec4 Position;
+void main() {
+    gl_Position = Position;
+}
+
+-- Fragment
+
+uniform sampler2D Sampler;
+out vec4 FragColor;
+void main() {
+    ivec2 coord = ivec2(gl_FragCoord.xy);
+    FragColor = texelFetch(Sampler, coord, 0);
+}
+[/text]
+
+Here's how you'd use GLSW to pluck out strings from the preceding file and automatically prepend them with <b>#line</b>:
+
+[cpp]
+glswInit();
+glswSetPath("./", ".glsl");
+const char* vs = glswGetShader("Blit.Vertex");
+const char* fs = glswGetShader("Blit.Fragment");
+// ... use vs and gs here ...
+glswShutdown();
+[/cpp]
+
+GLSW does all the file I/O for you; it takes the first token from the effect key that you pass to <b>glswGetShader</b>, then checks if it has the effect cached; if not, it finds a file by decorating the effect name with a path prefix (in this case, "./") and a path suffix (in this case, ".glsl").
+
+<h2 id="ignored-text">Ignored Text</h2>
+
+If a section divider in your effect file does not contain any alphanumeric characters, then all text is ignored until the next section divider (or the end of the file).  Also, any text that precedes the first section divider is ignored (this could be useful for a copyright notice).
+
+If a section divider <i>does</i> declare a legal shader key (i.e., the first contiguous sequence of alphanumeric characters and periods), then any characters appearing before and after the shader key are ignored.
+
+For example, the following is a silly but valid effect file:
+
+[text]
+______  _  _  _   
+| ___ \| |(_)| |  
+| |_/ /| | _ | |_ 
+| ___ \| || || __|
+| |_/ /| || || |_ 
+\____/ |_||_| \__|
+                  
+-------- Vertex --------
+
+in vec4 Position;
+void main() {
+    gl_Position = Position;
+}
+
+--- /\/\/\/\/\/\/\/\ ---
+
+Contrariwise, if it was so, it might be; and if it were so,
+it would be; but as it isn't, it ain't. That's logic. 
+
+--[[[[[ Fragment <== Brigadier Lethbridge-Stewart
+
+uniform sampler2D Sampler;
+out vec4 FragColor;
+void main() {
+    ivec2 coord = ivec2(gl_FragCoord.xy);
+    FragColor = texelFetch(Sampler, coord, 0);
+}
+[/text]
+
+<h2 id="error-handling">Error Handling and Shader Key Matching</h2>
+
+GLSW never aborts or throws exceptions.  It returns 0 on failure and lets you fetch the most recent error string using <b>glswGetError</b>.  This can happen if it can't find the file for your specified effect key, or if you forget to call <b>glswInit</b>.
+
+When GLSW tries to find a shader key that matches with the effect key requested from your C/C++ code, it doesn't necessarily need to find an exact match.  Instead, it finds the <i>longest</i> shader key that matches with the <i>beginning</i> of your requested effect key.  For example, consider an effect file called <b>TimeMachine.glsl</b> that looks like this:
+
+[text]
+-- Vertex
+FOO
+-- Geometry
+BAR
+-- Fragment.Erosion
+BAZ
+-- Fragment.Grassfire
+QUX
+-- TessControl
+QUUX
+-- TessEvaluation
+QUUUX
+[/text]
+
+If your C++ code does this:
+
+[cpp]
+void test(const char* effectKey)
+{
+    const char* shader = glswGetShader(effectKey);
+    if (shader)
+        cout << shader << endl;
+    else
+        cout << glswGetError() << endl;
+}
+
+void main()
+{
+    glswInit();
+    glswSetPath("", ".glsl");
+    test("TimeMachine.Vertex.Grassfire");
+    test("TimeMachine.Fragment.Grassfire");
+    test("TimeMachine.Fragment.Cilantro");
+    test("Madrid");
+    glswShutdown();
+}
+[/cpp]
+
+Then your output would be this:
+
+[text theme="Midnight"]
+FOO
+QUX
+Could not find shader with key 'TimeMachine.Fragment.Cilantro'.
+Unable to open effect file 'Madrid.glsl'.
+[/text]
+
+Note that the first requested effect key did not report an error even though that exact shader key does not exist in the effect file.  Here's an example where this is useful: you'd like to use the same vertex shader with two different fragment shaders, but your rendering engine forms the string for effect keys in a generic way.  For example, maybe your rendering engine defines a function that looks like this:
+
+[cpp]
+GLuint BuildProgram(const char* effectVariant)
+{
+    // ...snip...
+
+    sprintf(effectKey, "TimeMachine.Vertex.%s", effectVariant);
+    const char* vs = glswGetShader(effectKey);
+
+    sprintf(effectKey, "TimeMachine.Fragment.%s", effectVariant);
+    const char* fs = glswGetShader(effectKey);
+
+    // ...snip...
+}
+[/cpp]
+
+If you want to use the grassfire variant of the TimeMachine effect, you'd call <b>BuildProgram("Grassfire")</b>.  Even though the vertex shader happens to be the same for all variants of the TimeMachine effect, the rendering engine doesn't need to know.  GLSW will simply return the longest vertex shader that matches with the beginning of "TimeMachine.Vertex.Grassfire".  This avoids complicating the file format with support for cross-referencing.
+
+<h2 id="directive-mapping">Directive Mapping</h2>
+
+This is the only function we haven't explained yet:
+
+[cpp light="true"]
+int glswAddDirectiveToken(const char* token, const char* directive);
+[/cpp]
+
+This tells GLSW to add a token-to-directive mapping.  Whenever it sees a shader key that contains the specified token, it prepends the specified directive to the top of the shader.  If the specified token is an empty string, then the specified directive is prepended to all shaders.  For example, given this C/C++ code:
+
+[cpp]
+glswInit();
+glswSetPath("./", ".glsl");
+glswAddDirectiveToken("", "#define FOO 1");
+glswAddDirectiveToken("GL32", "#version 140");
+glswAddDirectiveToken("iPhone", "#extension GL_OES_standard_derivatives : enable");
+
+string effectKey;
+
+effectKey = "Blit.ES2.iPhone.Fragment";
+cout << effectKey << ':' << endl
+     << glswGetShader(effectKey.c_str()) << endl << endl;
+
+effectKey = "Blit.GL32.Fragment";
+cout << effectKey ':' << endl
+     << glswGetShader(effectKey.c_str()) << endl << endl;
+
+glswShutdown();
+[/cpp]
+
+You'd get output like this:
+
+[text]
+Blit.ES2.iPhone.Fragment:
+#define FOO 1
+#extension GL_OES_standard_derivatives : enable
+#line 7
+void main() {}
+
+Blit.GL32.Fragment:
+#define FOO 1
+#version 140
+#line 51
+void main() {}
+[/text]
+
+You can also use an effect name for the token parameter in <b>glswAddDirectiveToken</b>, which tells GLSW to prepend the specified directive to all shaders in that effect.
+
+C'est tout!
+
+<h2 id="download">Download</h2>
+
+You can download GLSW as a zip file:
+
+<ul>
+<li><a href="http://prideout.net/blog/glsw/glsw.zip">glsw.zip</a></li>
+<li><a href="http://prideout.net/blog/glsw/glsw.tar.gz">glsw.tar.gz</a></li>
+</ul>
+
+Or, you can download the files separately:
+
+<ul>
+<li><a href="http://prideout.net/blog/glsw/glsw.h">glsw.h</a></li>
+<li><a href="http://prideout.net/blog/glsw/glsw.c">glsw.c</a></li>
+<li><a href="http://prideout.net/blog/glsw/bstrlib.h">bstrlib.h</a></li>
+<li><a href="http://prideout.net/blog/glsw/bstrlib.c">bstrlib.c</a></li>
+</ul>

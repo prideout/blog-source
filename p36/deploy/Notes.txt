@@ -1,0 +1,13 @@
+For the text art, I used "Jacky" from http://patorjk.com/software/taag/.
+
+Should Pez initialize GLEW on your behalf?  If possible, no; although it should probably initialize "wglew" or whatever.
+
+# Should Pez get its own entry? Could use Mobius or granny knot as a "simplest possible" demo. No PNG or LIBCTM or LZMA or ZLIB. No vectormath either! Includes "Builds" for everything.
+
+    * The demo should definitely use ANSI C, to make sure Pez still works with it.
+    * We should publish both entries simultaneously.
+    * Should test with iPad
+    * Should test mouse handlers even though the simple program won't use them.
+
+# Platform.mm and the OpenCTM viewer
+# WebGL *and* iPad OpenCTM viewer

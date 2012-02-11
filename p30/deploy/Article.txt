@@ -1,0 +1,290 @@
+<!--img src="http://prideout.net/blog/vector0x/MoveConstructorShadow.png" alt="Move Constructor" class="alignright size-medium wp-image-12" style="border: none"/-->
+
+<div id="easy_contents" class="easysmallcontents" >
+<ol>
+<li><a href="#learning-resources">Learning Resources</a></li>
+<li><a href="#move-constructor">Move Constructor</a></li>
+<li><a href="#matrix-class">Matrix Class</a></li>
+<li><a href="#heap-allocation">Heap Allocation</a></li>
+<li><a href="#performance-tests">Performance Tests</a></li>
+</ol>
+</div>
+
+Is C++0x useful for vector math?  Specifically, can rvalue references be used to design a speedy 4x4 matrix class that has nice return-by-value semantics?  I did some experimentation to answer this question, and the answer seems to be a resounding "no", due to the fact that heap allocation is required to make good use of rvalue references.
+
+Since I find rvalue references (<b>&&</b>) to be the most compelling feature in C++0x, I wanted to see how they could help us graphics geeks, now that all major platforms support them (<b>Visual Studio 2010</b> on Windows and <b>gcc</b> on everything else).  Keep in mind that this post is just an exploration -- I'm definitely NOT recommending that you implement a matrix class using heap allocation!  In fact, the benchmarking at the end shows just how insane that would be.
+
+<h2 id="learning-resources">Learning Resources</h2>
+
+For a good introduction to rvalue references, I recommend this article from Hinnant, Stroustrup, and Kozicki:
+
+<ul>
+<li>
+<a href="http://www.artima.com/cppsource/rvalue.html">http://www.artima.com/cppsource/rvalue.html</a></li></ul>
+
+Several resources are available on MSDN as well:
+
+<ul>
+<li><a href="http://blogs.msdn.com/msdnforum/archive/2010/03/19/rvalue-reference-support-in-visual-c-2010.aspx">http://blogs.msdn.com/msdnforum/archive/2010/03/19/...</a></li>
+<li><a href="http://msdn.microsoft.com/en-us/library/dd293668%28VS.100%29.aspx">http://msdn.microsoft.com/en-us/library/...</a></li>
+</ul>
+
+I first heard about rvalue references, lambda functions, and <b>auto</b> from Stephan Lavavej's post, which discusses all the C++0x features that made it into Visual Studio 2010:
+
+<ul><li>
+<a href="http://blogs.msdn.com/vcblog/archive/2008/10/28/lambdas-auto-and-static-assert-c-0x-features-in-vc10-part-1.aspx">http://blogs.msdn.com/vcblog/archive/2008/10/28/...</a>
+</li></ul>
+
+<h2 id="move-constructor">Move Constructor</h2>
+
+One of the key ways to use rvalue references is through the use of a <i>move constructor</i>.  It's like a copy constructor except that it gets to "steal" its data from the other class; it knows that the other class will be thrown away anyway.  Here's an example:
+
+[cpp highlight="7,8,9,10,11"]
+struct Matrix
+{
+    float* M;
+
+    Matrix() : M(new float[16]) { }
+
+    Matrix(Matrix&& other)
+    {
+        M = other.M;
+        other.M = 0;
+    }
+
+    Matrix(const Matrix& other) : M(new float[16])
+    {
+        std::copy(other.M, other.M + 16, M);
+    }
+
+    // ...
+};
+[/cpp]
+
+Don't interpret the new <b>&&</b> notation as "reference-to-reference".  It's better just to think of it as a brand new symbol in the C++ language.
+
+You can also define a <b>move assignment operator</b> in addition to the move constructor.  The move constructor can then call the move assignment operator to do all the work:
+
+[cpp]
+Matrix& operator=(Matrix&& other)
+{
+   if (this != &other)
+   {
+       // ...steal data here...
+   }
+   return *this;
+}
+
+Matrix(Matrix&& other)
+{
+   *this = std::move(other);
+}
+[/cpp]
+
+<h2 id="matrix-class">Matrix Class</h2>
+
+When I first learned about rvalue references, matrices immediately came to mind.  This turned out be somewhat naive of me, as you'll see later.  They're indeed useful for classes that represent large matrices, but they're not very helpful for the relatively tiny 4x4 matrices that we often deal with.
+
+When designing a matrix class in C++, a popular convention is to provide a pair of methods for each transformation: a const method that returns a transformed matrix, and a non-const method that transforms the matrix in place.  For example, consider transposition:
+
+[cpp]
+struct Matrix
+{
+    float M[16];
+
+    Matrix Transposed() const
+    {
+        Matrix other;
+        for (int i = 0; i < 4; ++i)
+        {
+            for (int j = 0; j < 4; ++j)
+                other.M[i * 4 + j] = M[j * 4 + i];
+        }
+        return other;
+    }
+
+    void Transpose()
+    {
+        for (int i = 0; i < 4; ++i)
+        {
+            for (int j = 0; j < i; ++j)
+                std::swap(M[i * 4 + j], M[j * 4 + i]);
+        }
+    }
+
+    // ...snip...
+};
+[/cpp]
+
+Rotation, translation, and scale would be equally suitable examples, but you get the point.  In <b>Transposed()</b>, I'm returning 64 bytes on the stack.  Some developers would tell you this is ill-advised.  I'm guessing that's why the D3DX vector library does everything through pointer-passing.  I'm sure D3DX is quite high-performing (especially since it uses SSE instructions), but its syntax can be quite awkward in certain circumstances.  Take a look at a couple D3DX function declarations:
+
+[cpp]
+D3DXMATRIX* D3DXMatrixInverse(
+  D3DXMATRIX* pOut,
+  FLOAT* pDeterminant,
+  CONST D3DXMATRIX* pM);
+  
+D3DXMATRIX* D3DXMatrixMultiply(
+  D3DXMATRIX* pOut,
+  CONST D3DXMATRIX* pM1,
+  CONST D3DXMATRIX* pM2);
+[/cpp]
+
+Chaining together functions using an API like this is painful.  On the other hand, a matrix class designed the way I mentioned earlier supports chaining in a more natural way:
+
+[cpp]
+Matrix m2 = m1.Scaled(5.0f).Translated(1.0f, 2.0f, 3.0f).Rotated(radians, axis).Transposed();
+[/cpp]
+
+Unfortunately, if you step into C++ code like this, you'll see that many temporary matrices are created and copied, only to be immediately discarded.  This is typically where rvalues come to rescue. If you visit the sites I mentioned earlier, you'll see similar examples, but they use strings instead of matrices.
+
+<h2 id="heap-allocation">Heap Allocation</h2>
+
+In my move constructor example, I stored the 16 floats on the heap (i.e., allocated with <b>new</b>).  This was required to make good use of a move constructor.  Of course, an alternative is using <b>std::vector</b>, but even that uses the heap behind the scenes.  Incidentally, here's how you can define a move constructor if your class contains a <b>std::vector</b>: (note: I would *never* implement a matrix class like this; I'm only showing how to use a move constructor)
+
+[cpp highlight="6,11"]
+#include <vector>
+
+template <typename T>
+struct Matrix
+{
+    std::vector<T> M;
+    Matrix() : M(16) { }
+
+    Matrix<T>(Matrix<T>&& other)
+    {
+        M = std::move(other.M);
+    }
+
+    Matrix(const Matrix<T>& other)
+    {
+        M = other.M;
+    }
+    
+    // ...snip...
+};
+[/cpp]
+
+The cool thing to notice in the above snippet is the use of <b>std::move</b>.  This allows you to leverage the move constructor that's already in <b>std::vector</b>.
+
+Unfortunately, allocating lots of little 64-byte objects on the heap is very slow!  Interestingly, there's a new STL class for staticly-sized arrays called <b>std::array</b>.  (Actually it's not all that new; it's a TR1 class.)  We can use it instead of <b>std::vector</b> like so:
+
+[cpp highlight="6"]
+#include <array>
+
+template <typename T>
+struct Matrix
+{
+    std::array<T, 16> M;
+    
+    // ...snip...
+}
+[/cpp]
+
+<b>std::array</b> isn't very different from a plain-jane C-style array.  It doesn't have a move constructor.  There's no reason for it to have one, since it can't do any pointer-swapping tricks.
+
+<h2 id="performance-tests">Performance Tests</h2>
+
+Just for kicks, I created a little benchmark for matrix operations that tries three different class designs:
+
+<ol>
+<li>Staticly-allocated contents with no move constructor (since there's no reason to have one)</li>
+<li>Heap-allocated contents with a move constructor.</li>
+<li>Heap-allocated contents with no move constructor.</li>
+</ol>
+
+I suppose this isn't surprising, but the best-performing design (by far) was the one that used staticly-allocated data.  The heap-with-move-constructor design got second place.  Here's the benchmark's output with compiler optimizations disabled:
+
+[text]
+Static Matrix (uses std::array)
+-------------------------------
+54 milliseconds
+45 milliseconds
+45 milliseconds
+45 milliseconds
+45 milliseconds
+
+Heap Matrix with C++98 (uses std::vector)
+-----------------------------------------
+306 milliseconds
+302 milliseconds
+307 milliseconds
+302 milliseconds
+304 milliseconds
+
+Heap Matrix with C++0x (uses std::vector and std::move)
+-------------------------------------------------------
+262 milliseconds
+262 milliseconds
+263 milliseconds
+262 milliseconds
+263 milliseconds
+[/text]
+
+The code for this benchmark is a bunch of contrived nonsense.  It looks like this:
+
+[cpp]
+template <typename MATRIX>
+void test()
+{
+    MATRIX a = MATRIX::Random();
+    MATRIX b = MATRIX::Random();
+    MATRIX c = MATRIX::Identity();
+    for (int count = 0; count < 5; ++count) {
+        clock_t start = clock();
+        for (int j = 0; j < 10000; ++j) {
+            MATRIX i = MATRIX::Identity();
+            MATRIX d = a + b + i;
+            c = c + d;
+        }
+        clock_t finish = clock();
+        cout << finish - start << " milliseconds" << endl;
+    }
+    cout << endl;
+}
+
+void main() 
+{
+    cout << "Static Matrix (uses array)" << endl;
+    cout << "-------------------------------" << endl;
+    test<StaticMatrix<float>>();
+
+    cout << "Heap Matrix with C++98 (uses vector)" << endl;
+    cout << "-----------------------------------------" << endl;
+    test<HeapMatrix<float>>();
+
+    cout << "Heap Matrix with C++0x (uses vector and move)" << endl;
+    cout << "-------------------------------------------------------" << endl;
+    test<MoveableHeapMatrix<float>>();
+}
+[/cpp]
+
+I saw similar results when testing with a contrived daisy-chaining example:
+
+[cpp highlight="8,9,10,11"]
+template <typename MATRIX>
+void test2()
+{
+    MATRIX a = MATRIX::Random();
+    for (int count = 0; count < 5; ++count) {
+        clock_t start = clock();
+        for (int j = 0; j < 5000; ++j) {
+            a.Transposed().Translated(1, 2, 3).Transposed().
+              Translated(3, 2, 1).Transposed().Translated(8, 9, 10).
+              Transposed().Translated(10, 9, 8).Transposed().
+              Translated(4, 5, 6).Transposed().Translated(7, 9, 8);
+        }
+        clock_t finish = clock();
+        cout << finish - start << " milliseconds" << endl;
+    }
+    cout << endl;
+}
+[/cpp]
+
+If you'd like, you can download the full source code for my benchmark, but it's pretty lame.  Here's the download:
+
+<ul>
+<li><a href="http://prideout.net/blog/vector0x/matrix.cpp">matrix.cpp</a></li>
+</ul>
+
+So, perhaps rvalue references aren't exactly the holy grail when you're designing a 4x4 matrix class.  :)

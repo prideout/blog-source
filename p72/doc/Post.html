@@ -1,0 +1,263 @@
+<div id="easy_contents" class="easysmallcontents" >
+<ol>
+<li><a href="#lsystem">Beautiful Lindenmayer Systems</a></li>
+<li><a href="#python">Python Snippets for RenderMan</a></li>
+<li><a href="#rsl">Some RSL Fun</a></li>
+<li><a href="#downloads">Downloads</a></li>
+<li><a href="#gallery">Gallery</a></li>
+</ol>
+</div>
+
+This post is a follow-up to something I wrote exactly one year ago: <a href="http://prideout.net/blog/?p=44">Mesh Generation with Python</a>.
+
+In the old post, I discussed a number of ways to generate 3D shapes in Python, and I posted some OpenGL screenshots to show off the geometry.
+
+Since this is my first post since joining Pixar, I figured it would be fun to use RenderMan rather than OpenGL to show off some new procedurally-generated shapes.  Sure, my new images don't render at interactive rates, but they're nice and high-quality:
+
+<a href="http://prideout.net/blog/p72/Art.png" class="floatbox" title="1024x428">
+<img src="http://prideout.net/blog/p72/Art-Inline.png" alt="1024x428" /></a> 
+
+<h2 id="lsystem">Beautiful Lindenmayer Systems</h2>
+
+My favorite L-system from Mikael Hvidtfeldt Christensen is his <a href="http://www.flickr.com/photos/syntopia/3573620167/">Nouveau Variation</a>; when I first saw it, I stared at it for half an hour; it's hypnotically mathematical and surreal.  He generates his art using his own software, <a href="http://structuresynth.sourceforge.net/reference.php">Structure Synth</a>.
+
+To make similar creations without the help of Mikael's software, I use the same XML format and Python script that I showed off in my 2010 post (<a href="http://prideout.net/blog/?p=44#rules">here</a>), with an extension to switch from one rule to another when a particular rule's maximum depth is reached.
+
+The other improvement I made was in the implementation itself; rather than using recursion to evaluate the L-system rules, I use a Python list as a stack.  This turned out to simplify the code.
+
+Here's the XML representation of Mikael's beautiful "Nouveau" L-system, which I used to generate all the images on this page:
+
+[xml]
+<rules max_depth="1000">
+    <rule name="entry">
+        <call count="16" transforms="rz 20" rule="hbox"/>
+    </rule>
+    <rule name="hbox"><call rule="r"/></rule>
+    <rule name="r"><call rule="forward"/></rule>
+    <rule name="r"><call rule="turn"/></rule>
+    <rule name="r"><call rule="turn2"/></rule>
+    <rule name="r"><call rule="turn4"/></rule>
+    <rule name="r"><call rule="turn3"/></rule>
+    <rule name="forward" max_depth="90" successor="r">
+        <call rule="dbox"/>
+        <call transforms="rz 2 tx 0.1 sa 0.996" rule="forward"/>
+    </rule>
+    <rule name="turn" max_depth="90" successor="r">
+        <call rule="dbox"/>
+        <call transforms="rz 2 tx 0.1 sa 0.996" rule="turn"/>
+    </rule>
+    <rule name="turn2" max_depth="90" successor="r">
+        <call rule="dbox"/>
+        <call transforms="rz -2 tx 0.1 sa 0.996" rule="turn2"/>
+    </rule>
+    <rule name="turn3" max_depth="90" successor="r">
+        <call rule="dbox"/>
+        <call transforms="ry -2 tx 0.1 sa 0.996" rule="turn3"/>
+    </rule>
+    <rule name="turn4" max_depth="90" successor="r">
+        <call rule="dbox"/>
+        <call transforms="ry -2 tx 0.1 sa 0.996" rule="turn4"/>
+    </rule>
+    <rule name="turn5" max_depth="90" successor="r">
+        <call rule="dbox"/>
+        <call transforms="rx -2 tx 0.1 sa 0.996" rule="turn5"/>
+    </rule>
+    <rule name="turn6" max_depth="90" successor="r">
+        <call rule="dbox"/>
+        <call transforms="rx -2 tx 0.1 sa 0.996" rule="turn6"/>
+    </rule>
+    <rule name="dbox">
+        <instance transforms="s 2.0 2.0 1.25" shape="boxy"/>
+    </rule>
+</rules>
+[/xml]
+
+<h2 id="python">Python Snippets for RenderMan</h2>
+
+RenderMan lets you assign names to gprims, which I find useful when it reports errors.  RenderMan also lets you assign gprims to various "ray groups", which is nice when you're using AO or Global Illumination; it lets you include/exclude certain geometry from ray-casts.
+
+Given these two labels (an identifier and a ray group), I found it useful to extend RenderMan's Python binding with a utility function:
+
+[python]
+def SetLabel( self, label, groups = '' ):
+    """Sets the id and ray group(s) for subsequent gprims"""
+    self.Attribute(self.IDENTIFIER,{self.NAME:label})
+    if groups != '':
+        self.Attribute("grouping",{"membership":groups})
+[/python]
+
+Since Python lets you dynamically add methods to a class, you can graft the above function onto the Ri class like so:
+
+[python]
+prman.Ri.SetLabel = SetLabel
+ri = prman.Ri()
+# do some init stuff....
+ri.SetLabel("MyHeroShape", "MovingGroup")
+# instance a gprim...
+[/python]
+
+I also found it useful to write some Python functions that simply called out to external processes, like the RSL compiler and the brickmap utility:
+
+[python]
+def CompileShader(shader):
+    """Compiles the given RSL file"""
+    print 'Compiling %s...' % shader
+    retval = os.system("shader %s.sl" % shader)
+    if retval:
+        quit()
+
+def CreateBrickmap(base):
+    """Creates a brick map from a point cloud"""
+    if os.path.exists('%s.bkm' % base):
+        print "Found brickmap for %s" % base
+    else:
+        print "Creating brickmap for %s..." % base
+        if not os.path.exists('%s.ptc' % base):
+            print "Error: %s.ptc has not been generated." % base
+        else:
+            os.system("brickmake %s.ptc %s.bkm" % (base, base))
+
+[/python]
+
+Here's another image of the same L-system, using a different random seed:
+
+<a href="http://prideout.net/blog/p72/Homage.png" class="floatbox" title="1600x670"><img src="http://prideout.net/blog/p72/Homage-Inline.png" alt="1600x670" /></a> 
+
+Reminds me of Salvadore Dal&iacute;...
+<h2 id="rsl">Some RSL Fun</h2>
+
+The RenderMan stuff was fairly straightforward.  I'm using a bog-standard AO shader:
+
+[cpp]
+class ComputeOcclusion(string hitgroup = "";
+                       color em = (1,0,1);
+                       float samples = 64)
+{
+  public void surface(output color Ci, Oi)
+  {
+    normal Nn = normalize(N);
+    float occ = occlusion(P, Nn, samples,
+                          "maxdist", 100.0,
+                          "subset", hitgroup);
+
+    Ci = (1 - occ) * Cs * Os;
+    Ci *= em;
+    Oi = Os;
+  }
+}
+[/cpp]
+
+Hurray, that was my first RSL code snippet on the blog!  I'm also using an imager shader to achieve the same vignette effect that Mikael used for his artwork.  It just applies a radial dimming operation and adds a bit of noise to give it a photographic look:
+
+[cpp]
+class Vignette()
+{
+   public void imager(output varying color Ci; output varying color Oi)
+   {
+        float x = s - 0.5;
+        float y = t - 0.5;
+        float d = x * x + y * y;
+        Ci *= 1.0 - d;
+
+        float n = (cellnoise(s*1000, t*1000) - 0.5);
+        Ci += n * 0.025;
+   }
+}
+[/cpp]
+
+<h2 id="downloads">Downloads</h2>
+
+Here are my Python scripts and RSL code for your enjoyment:
+
+<ul class="hlist">
+<li><a href="http://prideout.net/blog/p72/homage.zip">homage.zip</a></li>
+</ul>
+
+<h2 id="gallery">Gallery</h2>
+
+<div>
+<style>
+div.float {
+  float: left;
+  }
+  div.float p {
+   text-align: center;
+   }
+div.spacer {
+  clear: both;
+  }
+</style>
+<div class="spacer">
+  &nbsp;
+</div>
+
+<div class="float">
+<a href="http://prideout.net/blog/p72/Big.jpg" class="floatbox" title="1600x670">
+<img src="http://prideout.net/blog/p72/Big-Thumbnail.png" alt="1600x670" /></a>
+</div>
+
+<div class="float">
+<a href="http://prideout.net/blog/p72/MaxDist100.png" class="floatbox" title="1600x900">
+<img src="http://prideout.net/blog/p72/MaxDist100-Thumbnail.png" alt="1600x900" /></a>
+</div>
+
+<div class="float">
+<a href="http://prideout.net/blog/p72/Sweet1600x1200.jpg" class="floatbox" title="1600x1200">
+<img src="http://prideout.net/blog/p72/Sweet1600x1200-Thumbnail.png" alt="1600x1200" /></a> 
+</div>
+
+<div class="float">
+<a href="http://prideout.net/blog/p72/Sweet900.png" class="floatbox" title="1600x900">
+<img src="http://prideout.net/blog/p72/Sweet900-Thumbnail.png" alt="1600x900" /></a>
+</div>
+
+<div class="float">
+<a href="http://prideout.net/blog/p72/2400.jpg" class="floatbox" title="">
+<img src="http://prideout.net/blog/p72/2400-thumbnail.jpg" alt="" /></a> 
+</div>
+
+<div class="float">
+<a href="http://prideout.net/blog/p72/Marble.jpg" class="floatbox" title="">
+<img src="http://prideout.net/blog/p72/Marble-thumbnail.jpg" alt="" /></a> 
+</div>
+
+<div class="float">
+<a href="http://prideout.net/blog/p72/NiceScale.jpg" class="floatbox" title="">
+<img src="http://prideout.net/blog/p72/NiceScale-thumbnail.jpg" alt="" /></a> 
+</div>
+
+<div class="float">
+<a href="http://prideout.net/blog/p72/Paper2.jpg" class="floatbox" title="">
+<img src="http://prideout.net/blog/p72/Paper2-thumbnail.jpg" alt="" /></a> 
+</div>
+
+<div class="float">
+<a href="http://prideout.net/blog/p72/cool2.jpg" class="floatbox" title="">
+<img src="http://prideout.net/blog/p72/cool2-thumbnail.jpg" alt="" /></a> 
+</div>
+
+<div class="float">
+<a href="http://prideout.net/blog/p72/paper.jpg" class="floatbox" title="">
+<img src="http://prideout.net/blog/p72/paper-thumbnail.jpg" alt="" /></a> 
+</div>
+
+<div class="float">
+<a href="http://prideout.net/blog/p72/Five.png" class="floatbox" title="">
+<img src="http://prideout.net/blog/p72/Five-thumbnail.png" alt="" /></a> 
+</div>
+
+<div class="float">
+<a href="http://prideout.net/blog/p72/Ribbons.png" class="floatbox" title="">
+<img src="http://prideout.net/blog/p72/Ribbons-thumbnail.png" alt="" /></a> 
+</div>
+
+<div class="float">
+<a href="http://prideout.net/blog/p72/panorama.png" class="floatbox" title="">
+<img src="http://prideout.net/blog/p72/panorama-thumbnail.png" alt="" /></a> 
+</div>
+
+<div class="spacer">
+  &nbsp;
+</div>
+
+</div>

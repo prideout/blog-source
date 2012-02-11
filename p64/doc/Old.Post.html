@@ -1,0 +1,242 @@
+<a href="http://vimeo.com/18820265"><img src="http://prideout.net/blog/p64/MediumCloud.png" alt="Raycast Cloud" class="alignright size-medium wp-image-12" style="margin:10px;border:0;" /></a>
+
+Raycasting over a volume requires start and stop points for your rays.  The traditional method for computing these intervals is to draw a cube (with perspective) into two surfaces: one surface has front faces, the other has back faces.  By using a fragment shader that writes object-space XYZ into the RGB channels, you get intervals.  Your final pass is the actual raycast.
+
+I recently had the idea of bypassing these offscreen surfaces by adding some perspective-correct interpolation to the top of my raycast shader.  For kicks, I use the geometry shader to expand a single point into a cube and pass on the data needed by the fragment shader, although you can just as easily compute the data on the CPU.
+
+To have something interesting to render, I generate a pyroclastic cloud as described in <a href="http://magnuswrenninge.com/volumetricmethods">this amazing PDF on volumetric methods</a> from the 2010 SIGGRAPH course.  Miles Macklin has a simply great blog entry about it <a href="https://mmack.wordpress.com/2010/11/01/adventures-in-fluid-simulation/">here</a>.
+
+<h2 id="recap">Recap of Two-Pass Raycasting</h2>
+
+Here's a depiction of the usual offscreen surfaces for ray intervals:
+
+<a href="http://prideout.net/blog/p64/DualSurface.png" class="floatbox" title="Traditional Intervals"><img src="http://prideout.net/blog/p64/Thumb-DualSurface.png" alt="Traditional Raycasting Intervals" style="margin-left:10px;margin-bottom:5px;border:0;" /></a>
+
+Front faces give you the start points and the back faces give you the end points.  The usual procedure goes like this:
+
+<ol>
+<li>
+    Draw a cube's front faces into surface A and back faces into suface B.  This determines ray intervals.
+    <ul>
+        <li>Attach two textures to the current FBO to render to both surfaces simultaneously.</li>
+        <li>Use a fragment shader that writes out normalized object-space coordinates to the RGB channels.</li>
+    </ul>
+</li>
+<li>
+    Draw a full-screen quad to perform the raycast.
+    <ul>
+        <li>Bind three textures: the two interval surfaces, and the 3D texture you're raycasting against.</li>
+        <li>Sample the two interval surfaces to obtain ray start and stop points.  If they're equal, issue a <b>discard</b>.</li>
+    </ul>
+</li>
+</ol>
+
+<h2 id="singlepass">Making it Single-Pass</h2>
+
+To make this a one-pass process and remove two texture lookups from the fragment shader, we can use a procedure like this:
+
+<ol>
+<li>
+    Draw a cube's front-faces to perform the raycast.
+    <ul>
+        <li>Use a vertex or geometry shader that sends out normalized object-space coordinates at each vertex.</li>
+        <li>In your application code or geometry shader, compute the coordinates of a dilated back-facing triangle, and send that information to the fragment shader.</li>
+        <li>The start point is easy; just use the interpolated object-space coordinates that you sent down with each vertex.</li>
+        <li>For the stop point, use barycentric coordinates and perspective-correct interpolation to compute the correct value.</li>
+    </ul>
+</li>
+</ol>
+
+To pull this off, we pick a back-facing triangle from the cube, then dilate it enough to cover the screen-space area of the front faces.  The result is something like this:
+
+<a href="http://prideout.net/blog/p64/DilatedBackPlane.png" class="floatbox" title="New Intervals"><img src="http://prideout.net/blog/p64/Thumb-DilatedBackPlane.png" alt="Raycasting Intervals with Dilated Back Plane" style="margin-left:10px;margin-bottom:5px;border:0;" /></a>
+
+By sending information about the dilated back face to the fragment shader, the shader can do the math required to figure out a perspective-correct ray direction.
+
+I like to do as much as possible on the GPU, so I render my cube by drawing a single-vert VBO with <b>GL_POINTS</b>, then expanding it in the geometry shader. 
+
+My geometry shader is a bit of a mess, and certainly not optimized.  Not a big deal since it's only executed once.  A sane person would just do this on the CPU, in which case most of the <b>out</b> variables that you see in this listing would become <b>uniform</b> variables:
+
+[glsl]
+layout(points) in;
+layout(triangle_strip, max_vertices = 36) out;
+
+in vec4 vPosition[1];
+
+out vec3 gObj;
+out vec4 gNdc;
+out vec4 gNdcBack0, gNdcBack1, gNdcBack2;
+out vec3 gObjBack0, gObjBack1, gObjBack2;
+
+uniform mat4 ModelviewProjection;
+uniform mat4 Modelview;
+
+vec4 objCube[8]; // Object-space coordinate of cube corner
+vec4 eyeCube[8]; // Eye-space coordinate of cube corner
+vec4 ndcCube[8]; // Normalized device coordinate of cube corner
+vec2 winCube[8]; // Window-space coordinate of cube corner
+bool winding[6]; // Orientation of the cube face (true if front-facing)
+ivec4 faces[6];  // Vertex indices of the cube faces
+vec4 backPlane;  // Plane equation for the "best" back-facing triangle
+int backFace;    // Face index of the best back-facing triangle
+
+bool compute_winding(int face)
+{
+    int a = faces[face][0]; int b = faces[face][1];
+    int c = faces[face][2]; int d = faces[face][3];
+    vec3 i = vec3(winCube[b] - winCube[a], 0);
+    vec3 j = vec3(winCube[c] - winCube[a], 0);
+    return cross(i, j).z > 0.0;
+}
+
+void emit_vert(int vert)
+{
+    gObj = objCube[vert].xyz;
+    gNdc = ndcCube[vert];
+    gl_Position = ndcCube[vert];
+    EmitVertex();
+}
+
+void emit_face(int face)
+{
+    emit_vert(faces[face][0]); emit_vert(faces[face][1]);
+    emit_vert(faces[face][2]); emit_vert(faces[face][3]);
+    EndPrimitive();
+}
+
+void compute_backplane(int face)
+{
+    int a = faces[face][0]; int b = faces[face][1];
+    int c = faces[face][2]; int d = faces[face][3];
+    vec3 i = eyeCube[b].xyz - eyeCube[a].xyz;
+    vec3 j = eyeCube[c].xyz - eyeCube[a].xyz;
+    vec3 n = normalize(cross(i, j));
+    vec4 plane = vec4(n, -dot(n, eyeCube[a].xyz));
+    if (backPlane == vec4(0) || abs(n.z) > abs(backPlane.z)) {
+        backPlane = plane; backFace = face;
+        gObjBack0 = objCube[a].xyz;
+        gObjBack1 = objCube[b].xyz;
+        gObjBack2 = objCube[c].xyz;
+    }
+}
+
+void main()
+{
+    faces[0] = ivec4(0,1,3,2); faces[1] = ivec4(5,4,6,7);
+    faces[2] = ivec4(4,5,0,1); faces[3] = ivec4(3,2,7,6);
+    faces[4] = ivec4(0,3,4,7); faces[5] = ivec4(2,1,6,5);
+
+    vec4 P = vPosition[0];
+    vec4 I = vec4(1,0,0,0);
+    vec4 J = vec4(0,1,0,0);
+    vec4 K = vec4(0,0,1,0);
+
+    objCube[0] = P+K+I+J; objCube[1] = P+K+I-J;
+    objCube[2] = P+K-I-J; objCube[3] = P+K-I+J;
+    objCube[4] = P-K+I+J; objCube[5] = P-K+I-J;
+    objCube[6] = P-K-I-J; objCube[7] = P-K-I+J;
+
+    // Transform the corners of the box:
+    for (int vert = 0; vert < 8; vert++) {
+        eyeCube[vert] = Modelview * objCube[vert];
+        ndcCube[vert] = ModelviewProjection * objCube[vert];
+        winCube[vert] = ndcCube[vert].xy / ndcCube[vert].w;
+    }
+
+    // Determine frontfacing vs backfacing:
+    for (int face = 0; face < 6; face++)
+        winding[face] = compute_winding(face);
+
+    // Find a suitable backface:
+    backPlane = vec4(0);
+    for (int face = 0; face < 6; face++)
+        if (!winding[face]) compute_backplane(face);
+
+    // Dilate the backface using barycentric coordinates:
+    float A = 15.0; float B = 0.5 * (1.0 - A);
+    vec3 a = A * gObjBack0 + B * gObjBack1 + B * gObjBack2;
+    vec3 b = B * gObjBack0 + A * gObjBack1 + B * gObjBack2;
+    vec3 c = B * gObjBack0 + B * gObjBack1 + A * gObjBack2;
+    gObjBack0 = a; gObjBack1 = b; gObjBack2 = c;
+    gNdcBack0 = ModelviewProjection * vec4(gObjBack0, 1.0);
+    gNdcBack1 = ModelviewProjection * vec4(gObjBack1, 1.0);
+    gNdcBack2 = ModelviewProjection * vec4(gObjBack2, 1.0);
+
+    // Emit the front faces:
+    for (int face = 0; face < 6; face++)
+        if (winding[face]) emit_face(face);
+}
+[/glsl]
+
+The <b>compute_backplane</b> function in the listing is picking the plane that has the largest magnitude in the Z direction.  I figured this would give us the best candidate for dilation.
+
+The dilation itself is achieved by abusing barycentric coordinates.  I like to think of barycentric coordinates as blend weights where each weight is associated with a triangle corner.  The weights must add up to 1 to be legit.  To obtain an interior color using barycentric math, simply scale each corner's color by its associated weight, then sum the results.  In our case, we're not interested in interior points; we want to dilate the triangle while preserving its orientation.  This can be done by picking a corner and giving it an absurdly large weight (I used <b>W=15</b>) and setting the other two weights to <b>(1-W)/2</b>.
+
+You can perform dilation in object space or eye space, but not in normalized device coordinates.  In the wacky universe of post-projected space, parallel lines can intersect, and Euclid and his famous postulates get flushed down the drain.
+
+Perhaps more important than the geometry shader is the perspective-correct interpolation math in the fragment shader.  We should do it the same way that OpenGL normally performs interpolation when your fragment shader's <b>in</b> variables don't have an interpolation qualifier.  (In GLSL parlance, this is known as <b>smooth</b> interpolation.  The other qualifiers are <b>flat</b> and <b>noperspective</b>.)
+
+Let's say you want to use perspective-correct interpolation to determine the interior point of a triangle, where the barycentric coordinates are <b>a, b, c</b>.  Let's say that an attribute (i.e., color) associated with each vertex is represented with <b>f</b>.  To obtain the value of the interior point, use the <b>w</b> component of the post-transformed vertex positions like so:
+
+<img src="http://prideout.net/blog/p64/SmoothInterpolation.png" alt="Perspective-Correct Interpolation" style="margin-left:10px;margin-bottom:5px;border:0;" />
+
+So, the fragment shader needs to know the barycentric coordinates for the current pixel.  Ordinarily it's trivial to obtain barycentric coordinates in your fragment shader; simply create a vec3 <b>in</b> variable and attach <b>(1,0,0)</b> to corner A, <b>(0,1,0)</b> to corner B, and <b>(0,0,1)</b> to corner C.  However, in this case, we want to compute a barycentric coordinate relative to the dilated backface, not the triangle that's currently being rasterized.  If <b>(x,y)</b> is the current pixel, and <b>(x<sub>n</sub>,y<sub>n</sub>)</b> are the corners of the triangle, then the barycentric coordinates for the current pixel can be computed like so:
+
+<img src="http://prideout.net/blog/p64/Barycentric.png" alt="Barycentric Coordinates" style="margin-left:10px;margin-bottom:5px;border:0;" />
+
+<b>(&alpha;, &beta;, &gamma;)</b> represent the barycentric coordinates.  Here are the important bits from my raycasting fragment shader:
+
+[glsl]
+
+in vec3 gObj; // Object-space coordinate for "ray start" at current pixel
+in vec4 gNdc; // Normalized device coordinate for current pixel
+
+in vec3 gObjBack0, gObjBack1, gObjBack2; // Object-space coordinates for dilated backface
+in vec4 gNdcBack0, gNdcBack1, gNdcBack2; // Normalized device coordinates for dilated backface
+
+float bary(vec2 p, vec2 a, vec2 b)
+{
+    return (a.y - b.y)*p.x + (b.x - a.x)*p.y + a.x*b.y - b.x*a.y;
+}
+
+void main()
+{
+    // Find window-space coordinates:
+    vec2 p = gNdc.xy / gNdc.w;
+    vec2 winBack0 = gNdcBack0.xy / gNdcBack0.w;
+    vec2 winBack1 = gNdcBack1.xy / gNdcBack1.w;
+    vec2 winBack2 = gNdcBack2.xy / gNdcBack2.w;
+
+    // Compute Barycentric coordinates:
+    float f0 = bary(winBack0, winBack1, winBack2);
+    float f1 = bary(winBack1, winBack2, winBack0);
+    float f2 = bary(winBack2, winBack0, winBack1);
+    float a = bary(p, winBack1, winBack2) / f0;
+    float b = bary(p, winBack2, winBack0) / f1;
+    float c = bary(p, winBack0, winBack1) / f2;
+
+    // Perspective-correct interpolation:
+    vec3 rayStop = (a*gObjBack0/gNdcBack0.w + b*gObjBack1/gNdcBack1.w + c*gObjBack2/gNdcBack2.w) /
+                   (a/gNdcBack0.w + b/gNdcBack1.w + c/gNdcBack2.w);
+
+    vec3 rayStart = gObj;
+    
+    // Crawl over volume texture from rayStop to rayStart:
+    ...
+}
+[/glsl]
+
+Note that some of the math in preceding listing can be hoisted up into the geometry shader (or the CPU), but I found that doing so didn't help my frame rate, since the bottleneck was in the raycast.
+
+<h2 id="downloads">Downloads</h2>
+
+I've tested the code with Visual Studio 2010.  It uses <a href="http://www.cmake.org/cmake/resources/software.html">CMake</a> for the build system.
+
+<ul>
+<li><a href="http://prideout.net/blog/p64/raycast.zip">raycast.zip</a></li>
+<li><a href="http://prideout.net/blog/p64/Raycast.glsl">Raycast.glsl</a></li>
+<li><a href="http://prideout.net/blog/p64/Raycast.cpp">Raycast.cpp</a></li>
+</ul>
+
+I consider this code to be on the public domain.  Enjoy!
+ 

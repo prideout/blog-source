@@ -1,0 +1,181 @@
+
+<img src="http://prideout.net/blog/x2ctm/CtmShip.png" alt="CTM Ship" class="alignright size-medium wp-image-12" style="border: none"/-->
+
+The <a href="http://openctm.sf.net/">OpenCTM</a> file format for compressed triangle meshes looks very promising.  To celebrate my <a href="http://www.araneus.fi/gigasecond/">gigasecond birthday</a>, I wrote a <b>.x</b> to <b>.ctm</b> converter that exports positions and normals.  It currently discards texture coordinates, but it shouldn't be hard to extend it.  I can't guarantee that this tool is super robust, but it worked well enough for the test cases that I ran across.
+
+I simply used <a href="http://msdn.microsoft.com/en-us/library/bb174069%28VS.85%29.aspx">ID3DXMesh</a> to load in the <b>.x</b> file and the OpenCTM API to write out the <b>.ctm</b> file.  Unfortunately, the usage of ID3DXMesh makes this tool Windows-only.
+
+It's a command line tool that works like this:
+
+[text]
+Usage: x2ctm [sourcefile] [sourcefile] ...
+[/text]
+
+To form a destination filename, it simply replaces the existing file extension with <b>.ctm</b> and preserves the folder path.
+
+At a high level, here's how it works: (if you want, skip to the <a href="#downloads">downloads</a> section)
+
+[cpp]
+void ExportCTM(ID3DXMesh* pMesh, const char* destFile)
+{
+    // 1. Find where the positions, normals, and texture coordinates live.
+    // 2. Check that we support the format of the data.
+    // 3. Obtain vertex & index counts from the D3D mesh; allocate memory for the CTM mesh.
+    // 4. Lock down the verts and pluck out the positions and normals.
+    // 5. Lock down the indices and convert them to unsigned 32-bit integers.
+    // 6. Instance the OpenCTM mesh and save it to disk.
+    // 7. Free the OpenCTM buffers.
+}
+[/cpp]
+
+Here's the actual code for the above summary:
+
+[cpp]
+void ExportCTM(ID3DXMesh* pMesh, const char* destFile)
+{
+    // Find where the positions, normals, and texture coordinates live.
+
+    const WORD MISSING_ATTRIBUTE = 0xffff;
+    WORD positionsOffset = MISSING_ATTRIBUTE;
+    WORD normalsOffset = MISSING_ATTRIBUTE;
+    WORD texCoordsOffset = MISSING_ATTRIBUTE;
+
+    D3DVERTEXELEMENT9 vertexLayout[MAX_FVF_DECL_SIZE];
+    D3DVERTEXELEMENT9 endMarker = D3DDECL_END();
+    pMesh->GetDeclaration(vertexLayout);
+    D3DVERTEXELEMENT9* pVertexLayout = &vertexLayout[0];
+    for (int attrib = 0;  attrib < MAX_FVF_DECL_SIZE; ++attrib, pVertexLayout++)
+    {
+        if (0 == memcmp(&vertexLayout[attrib], &endMarker, sizeof(endMarker)))
+        {
+            break;
+        }
+        if (pVertexLayout->Stream != 0)
+        {
+            continue;
+        }
+        if (pVertexLayout->Usage == D3DDECLUSAGE_POSITION &&
+            pVertexLayout->Type == D3DDECLTYPE_FLOAT3)
+        {
+            cout << "Contains positions." << endl;
+            positionsOffset = pVertexLayout->Offset;
+        }
+        if (pVertexLayout->Usage == D3DDECLUSAGE_NORMAL &&
+            pVertexLayout->Type == D3DDECLTYPE_FLOAT3)
+        {
+            cout << "Contains normals." << endl;
+            normalsOffset = pVertexLayout->Offset;
+        }
+        if (pVertexLayout->Usage == D3DDECLUSAGE_TEXCOORD &&
+            pVertexLayout->Type == D3DDECLTYPE_FLOAT2)
+        {
+            cout << "Contains texture coordinates." << endl;
+            texCoordsOffset = pVertexLayout->Offset;
+        }
+    }
+
+    // Check that we support the format of the data.
+
+    if (positionsOffset == MISSING_ATTRIBUTE)
+    {
+        cerr << "Unsupported Vertex Declaration in " << destFile << endl;
+        exit(1);
+    }
+
+    // Obtain vertex & index counts from the D3D mesh; allocate memory for the CTM mesh.
+    DWORD dwVertexCount = pMesh->GetNumVertices();
+    DWORD dwTriangleCount = pMesh->GetNumFaces();
+    DWORD dwIndexCount = dwTriangleCount * 3;
+    CTMfloat* pCtmVertices = new CTMfloat[3* dwVertexCount];
+    CTMuint* pCtmIndices = new CTMuint[dwIndexCount];
+    CTMfloat* pCtmNormals = (normalsOffset == 0xffff) ? 0 : new CTMfloat[3 * dwVertexCount];
+
+    // Lock down the verts and pluck out the positions and normals.
+    {
+        void* pData = 0;
+        pMesh->LockVertexBuffer(D3DLOCK_READONLY , &pData);
+
+        if (positionsOffset != MISSING_ATTRIBUTE)
+        {
+            unsigned char* pSource = ((unsigned char*) pData) + positionsOffset;
+            unsigned char* pDest = (unsigned char* ) pCtmVertices;
+            DWORD dwSourceStride = pMesh->GetNumBytesPerVertex();
+            DWORD dwDestStride = sizeof(CTMfloat) * 3;
+    
+            for (DWORD dwVertex = 0; dwVertex < dwVertexCount; ++dwVertex)
+            {
+                memcpy(pDest, pSource, dwDestStride);
+                pSource += dwSourceStride;
+                pDest += dwDestStride;
+            }
+        }
+
+        if (normalsOffset != MISSING_ATTRIBUTE)
+        {
+            unsigned char* pSource = ((unsigned char*) pData) + normalsOffset;
+            unsigned char* pDest = (unsigned char* ) pCtmNormals;
+            DWORD dwSourceStride = pMesh->GetNumBytesPerVertex();
+            DWORD dwDestStride = sizeof(CTMfloat) * 3;
+    
+            for (DWORD dwVertex = 0; dwVertex < dwVertexCount; ++dwVertex)
+            {
+                memcpy(pDest, pSource, dwDestStride);
+                pSource += dwSourceStride;
+                pDest += dwDestStride;
+            }
+        }
+
+        pMesh->UnlockVertexBuffer();
+    }
+
+    // Lock down the indices and convert them to unsigned 32-bit integers.
+    {
+        void* pData = 0;
+        pMesh->LockIndexBuffer(D3DLOCK_READONLY , &pData);
+
+        DWORD dwOptions = pMesh->GetOptions();
+        DWORD dwSourceStride = (dwOptions & D3DXMESH_32BIT) ? 4 : 2;
+
+        unsigned char* pSource = (unsigned char*) pData;
+        unsigned char* pDest = (unsigned char*) pCtmIndices;
+        
+        DWORD dwDestStride = sizeof(CTMuint);
+    
+        for (DWORD dwIndex = 0; dwIndex < dwIndexCount; ++dwIndex)
+        {
+            memset(pDest, 0, dwDestStride);
+            memcpy(pDest, pSource, dwSourceStride);
+            pSource += dwSourceStride;
+            pDest += dwDestStride;
+        }
+
+        pMesh->UnlockIndexBuffer();
+    }
+
+    // Instance the OpenCTM mesh and save it to disk.
+    CTMcontext context = ctmNewContext(CTM_EXPORT);
+    ctmDefineMesh(context,
+        pCtmVertices,
+        dwVertexCount,
+        pCtmIndices,
+        dwTriangleCount,
+        pCtmNormals);
+    ctmSave(context, destFile);
+    ctmFreeContext(context);
+
+    // Free the OpenCTM buffers.
+    delete [] pCtmVertices;
+    delete [] pCtmIndices;
+    delete [] pCtmNormals;
+}
+[/cpp]
+
+<h2 id="downloads">Downloads</h2>
+
+I wrote this tool with Visual Studio 2010.  The code is covered by the <a href="http://sam.zoy.org/wtfpl/">WTFPL</a> license.
+
+<ul>
+<li><a href="http://prideout.net/blog/x2ctm/Converter.cpp">Converter.cpp</a></li>
+<li><a href="http://prideout.net/blog/x2ctm/x2ctm.zip">x2ctm.zip</a></li>
+<li><a href="http://prideout.net/blog/x2ctm/x2ctm.exe">x2ctm.exe</a></li>
+</ul>

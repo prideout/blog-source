@@ -1,0 +1,190 @@
+<iframe class="alignright size-medium wp-image-12" style="margin-left:10px" src="http://player.vimeo.com/video/18325558?title=0&amp;byline=0&amp;portrait=0&amp;autoplay=1&amp;loop=1" width="150" height="265" frameborder="0"></iframe>
+
+Robert Bridson, that esteemed guru of fluid simulation, wrote a short-n-sweet 2007 SIGGRAPH paper on using Perlin noise to create turbulent effects in a divergence-free velocity field (<a href="http://www.cs.ubc.ca/~rbridson/docs/bridson-siggraph2007-curlnoise.pdf">PDF</a>).  Divergence-free means that the velocity field conforms to the incompressibility aspect of Navier-Stokes, making it somewhat believable from a physics standpoint.  It's a nice way to fake a fluid if you don't have enough horsepower for a more rigorous physically-based system, such as the Eulerian grid in my <a href="http://prideout.net/blog/?p=58">Simple Fluid Simulation</a> post.
+
+The basic idea is to introduce noise into a "potential field", then derive velocity from the potential field using the curl operator.  Here's an expansion of the curl operator that shows how to obtain 3D velocity from potential:
+
+<img src="http://prideout.net/blog/p63/Potential3.png" style="border:0" alt=""/>
+
+The fact that we call it "potential" and that we're using a &Psi; symbol isn't really important.  The point is to use whatever crazy values we want for our potential field and not to worry about it.  As long as we keep the potential smooth (no discontinuities), it's legal.  That's because we're taking its curl to obtain velocity, and the curl of any smooth field is always divergence-free:
+
+<img src="http://prideout.net/blog/p63/SmoothCurl.png" style="border:0" alt=""/>
+
+<h2>Implementation</h2>
+
+<a href="http://prideout.net/blog/p63/Streamlines.png" class="floatbox" title="Streamlines"><img src="http://prideout.net/blog/p63/Thumbnail-Streamlines.png" alt="Streamlines" style="margin-left:10px;margin-bottom:5px;border:0;" class="alignright size-medium wp-image-12" /></a>
+
+You really only need four ingredients for this recipe:
+
+<ul>
+<li>Distance field for the rigid obstacles in your scene</li>
+<li>Intensity map representing areas where you'd like to inject turbulence</li>
+<li>vec3-to-vec3 function for turbulent noise (gets multiplied by the above map)</li>
+<li>Simple, smooth field of vectors for starting potential (e.g., buoyancy)</li>
+</ul>
+
+For the third bullet, a nice-looking result can be obtained by summing up three octaves of Perlin noise.  For GPU-based particles, it can be represented with a 3D RGB texture.  Technically the noise should be time-varying (an array of 3D textures), but in practice a single frame of noise seems good enough.
+
+The fourth bullet is a bit tricky because the concept of "inverse curl" is dodgy; given a velocity field, you cannot recover a <i>unique</i> potential field from it.  Luckily, for smoke, we simply need global upward velocities for buoyancy, and coming up with a reasonable source potential isn't difficult.  Conceptually, it helps to think of topo lines in the potential field as streamlines.
+
+The final potential field is created by blending together the above four ingredients in a reasonable manner.  I created an interactive diagram with graphviz that shows how the ingredients come together.  If your browser supports SVG, you can click on the diagram, then click any node to see a visualization of the plane at Z=0.
+
+<a href="http://prideout.net/blog/p63/curl.dot.svg">
+<img src="http://prideout.net/blog/p63/diagram.png" alt=""/>
+</a>
+
+If you're storing the final velocity field in a 3D texture, most of the processing in the diagram needs to occur only once, at startup.  The final velocity field can be static as long as your obstacles don't move.
+
+Obtaining velocity from the potential field is done with the curl operator; in pseudocode it looks like this:
+
+[cpp]
+Vector3 ComputeCurl(Point3 p)
+{
+    const float e = 1e-4f;
+    Vector3 dx(e, 0, 0);
+    Vector3 dy(0, e, 0);
+    Vector3 dz(0, 0, e);
+
+    float x = SamplePotential(p + dy).z - SamplePotential(p - dy).z
+            - SamplePotential(p + dz).y + SamplePotential(p - dz).y;
+
+    float y = SamplePotential(p + dz).x - SamplePotential(p - dz).x
+            - SamplePotential(p + dx).z + SamplePotential(p - dx).z;
+
+    float z = SamplePotential(p + dx).y - SamplePotential(p - dx).y
+            - SamplePotential(p + dy).x + SamplePotential(p - dy).x;
+
+    return Vector3(x, y, z) / (2*e);
+}
+[/cpp]
+
+Equally useful is a <b>ComputeGradient</b> function, which is used against the distance field to obtain a value that can be mixed into the potential field:
+
+[cpp]
+Vector3 ComputeGradient(Point3 p)
+{
+    const float e = 0.01f;
+    Vector3 dx(e, 0, 0);
+    Vector3 dy(0, e, 0);
+    Vector3 dz(0, 0, e);
+
+    float d =    SampleDistance(p);
+    float dfdx = SampleDistance(p + dx) - d;
+    float dfdy = SampleDistance(p + dy) - d;
+    float dfdz = SampleDistance(p + dz) - d;
+
+    return normalize(Vector3(dfdx, dfdy, dfdz));
+}
+[/cpp]
+
+Blending the distance gradient into an existing potential field can be a bit tricky; here's one way of doing it:
+
+[cpp]
+// Returns a modified potential vector, respecting the boundaries defined by distanceGradient
+Vector3 BlendVectors(Vector3 potential, Vector3 distanceGradient, float alpha)
+{
+    float dp = dot(potential, distanceGradient);
+    return alpha * potential + (1-alpha) * dp * distanceGradient;
+}
+[/cpp]
+
+The <b>alpha</b> parameter in the above snippet can be computed by applying a ramp function to the current distance value.
+
+<h2>Motion Blur</h2>
+
+<a href="http://prideout.net/blog/p63/Billboards.png" class="floatbox" title="Billboards"><img src="http://prideout.net/blog/p63/Thumbnail-Billboards.png" alt="Billboards" style="margin-left:10px;margin-bottom:5px;border:0;" class="alignright size-medium wp-image-12" /></a>
+
+Let's turn now to some of the rendering issues involved.  Let's assume you've got very little horsepower, or you're working in a very small time slice -- this might be why you're using a noise-based solution anyway.  You might only be capable of a one-thousand particle system instead of a one-million particle system.  For your particles to be space-filling, consider adding some motion blur.
+
+Motion blur might seem overkill at first, but since it inflates your billboards in an intelligent way, you can have fewer particles in your system.  The image to the right (click to enlarge) shows how billboards can be stretched and oriented according to their velocities.
+
+Note that it can be tricky to perform velocity alignment and still allow for certain viewing angles.  For more on the subject (and some code), see <a href="http://prideout.net/blog/?p=61#billboards">this section</a> of my previous blog entry.
+
+<h2>Soft Particles</h2>
+
+Another rendering issue that can crop up are hard edges.  This occurs when you're depth-testing billboards against obstacles in your scene -- the effect is shown on the left in the image below.
+
+<a href="http://prideout.net/blog/p63/HardSoftParticles.png" class="floatbox" title="Hard Particles vs Soft Particles"><img src="http://prideout.net/blog/p63/Thumbnail-HardSoftParticles.png" alt="Hard Particles vs Soft Particles" style="margin-left:10px;margin-bottom:5px;border:0;" class="alignright size-medium wp-image-12" /></a>
+
+Turns out that an excellent chapter in <i>GPU Gems 3</i> discusses this issue.  (Here's a <a href="http://http.developer.nvidia.com/GPUGems3/gpugems3_ch23.html">link</a> to the online version of the chapter.)  The basic idea is to fade alpha in your fragment shader according to the Z distance between the current fragment and the depth obstacle.  This method is called <i>soft particles</i>, and you can see the result on the right in the comparison image.
+
+I found that using a linear fade-out can cause particles to appear too light.  To alleviate this, I decided to apply a quartic falloff to the alpha value.  This makes the particle stay opaque longer with rapid fall-off.  When I'm prototyping simple functions like this, I like to use Wolfram Alpha as my web-based graphing calculator .  Here's one possibility (click to view in Wolfram Alpha):
+
+<a href="http://www.wolframalpha.com/input/?i=1-%28%281-x%29%5E4%29+from+x%3D0+to+1">
+<img src="http://prideout.net/blog/p63/wolfram.png" alt="equation" style="border:0" />
+</a>
+
+It's tempting to use trig functions when designing ramp functions like this, but keep in mind that they can be quite costly.
+
+Without further ado, here's the fragment shader that I used to render my smoke particles:
+
+[glsl]
+uniform vec4 Color;
+uniform vec2 InverseSize;
+varying float gAlpha;
+varying vec2 gTexCoord;
+uniform sampler2D SpriteSampler;
+uniform sampler2D DepthSampler;
+
+void main()
+{
+    vec2 tc = gl_FragCoord.xy * InverseSize;
+    float depth = texture2D(DepthSampler, tc).r;
+    if (depth < gl_FragCoord.z)
+        discard;
+
+    float d = depth - gl_FragCoord.z;
+    float softness = 1.0 - min(1.0, 40.0 * d);
+    softness *= softness;
+    softness = 1.0 - softness * softness;
+
+    float A = gAlpha * texture2D(SpriteSampler, gTexCoord).a;
+    gl_FragColor = Color * vec4(1, 1, 1, A * softness);
+}
+[/glsl]
+
+There are actually three alpha values involved in the above snippet: alpha due to the particle's lifetime (<b>gAlpha</b>), alpha due to the circular nature of the sprite (<b>SpriteSampler</b>), and alpha due to the proximity of the nearest depth boundary (<b>softness</b>).
+
+If you'd like, you can avoid the <b>SpriteSampler</b> lookup by evaluating the Gaussian function in the shader; I took that approach in my previous blog entry.
+
+Next up is the compositing fragment shader that I used to blend the particle billboards against the scene. When this shader is active, the app is drawing a full-screen quad.
+
+[glsl]
+varying vec2 vTexCoord;
+uniform sampler2D BackgroundSampler;
+uniform sampler2D ParticlesSampler;
+
+void main()
+{
+    vec4 dest = texture2D(BackgroundSampler, vTexCoord);
+    vec4 src = texture2D(ParticlesSampler, vTexCoord);
+    gl_FragColor.rgb = src.rgb * a + dest.rgb * (1.0 - a);
+    gl_FragColor.a = 1.0;
+}
+[/glsl]
+
+Here's the blending function I use when drawing the particles:
+
+[glsl]
+glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ZERO, GL_ONE_MINUS_SRC_ALPHA);
+[/glsl]
+
+The rationale for this is explained in <a href="http://http.developer.nvidia.com/GPUGems3/gpugems3_ch23.html">the GPU gems chapter</a> that I already mentioned.
+
+<h2>Streamlines</h2>
+
+<iframe class="alignright" src="http://player.vimeo.com/video/18325446?byline=0&amp;portrait=0" width="150" height="263" frameborder="0"></iframe>
+
+Adding a streamline renderer to your app makes it easy to visualize turbulent effects.  As seen in the video to the right, it's also pretty fun to watch the streamlines grow.  The easiest way to do this?  Simply use very small billboards and remove the call to <b>glClear</b>!  Well, you'll probably still want to clear the surface at startup time, to prevent junk.  Easy peasy!
+
+<h2 id="downloads">Downloads</h2>
+
+I've tested the code with Mac OS X and Windows with Visual Studio 2010.  It uses <a href="http://www.cmake.org/cmake/resources/software.html">CMake</a> for the build system.
+
+<ul>
+<li><a href="http://prideout.net/blog/p63/CurlNoise.zip">CurlNoise.zip</a></li>
+<li><a href="http://prideout.net/blog/p63/Shaders.glsl">Shaders.glsl</a></li>
+</ul>
+
+I consider this code to be on the public domain.  Enjoy!
+ 

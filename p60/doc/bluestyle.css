@@ -1,0 +1,48 @@
+body { margin: 12px 70px 12px 70px; font: 12px 'Lucida Grande', Geneva, Verdana, Arial, sans-serif;  text-align: justify;}
+
+a:link {text-decoration: none; color : #326fa3}
+a:visited {text-decoration: none;  color : #326fa3}
+a:active {text-decoration: none; color: #666666}
+a:hover {text-decoration: underline;} 
+
+P.note {
+  font-family: Helvetica,Arial,sans-serif;
+}
+H3.note {
+  font-family: Helvetica,Arial,sans-serif;
+  font-weight: bold;
+  font-size: 12;
+}
+
+div.chapter div.titlepage h2 {
+    font-size: 180%;
+    font-family: Helvetica;
+    font-weight: Bold;
+    color: #326fa3; 
+}
+
+pre.programlisting {
+    background-color:#efefef;
+    padding:5px;
+    border-color:lightgray;
+    border-style:solid;
+    border-width:1px;
+}
+
+table {
+    border: none;
+}
+
+td {
+    border: none;
+}
+
+col.filenames {
+  background-color: #8f8fff;
+  color: #ffffff;
+}
+
+col.descriptions {
+  background-color: #ffff8f;
+  color: #ffffff;
+}

@@ -1,0 +1,489 @@
+<img src="http://prideout.net/blog/wp-content/uploads/2010/05/AaToon.gif" alt="Cel Shader" class="alignright size-medium wp-image-12" />
+
+Cel shading (also known as toon shading) is nothing new, but it's a fun and simple way to learn about shaders.  This post walks through the development of a simple OpenGL 3.0+ demo for cel shading that antialiases the boundaries between color bands -- without using multisampling!  The antialiasing is achieved using shader derivatives (the <b>fwidth</b> function in GLSL).
+
+I posted some sample code at the end of this article that's tested on Ubuntu, Snow Leopard, and Windows.  On Snow Leopard, the demo falls back to using an older version of GLSL.  I kept the code short and sweet; it doesn't have any dependencies on libraries like SDL or GLUT.  It's harder and harder to write minimalist OpenGL demos nowadays, especially if you write forward-compatible OpenGL code like I do.  The only libraries that this demo uses (other than OpenGL itself) are <a href="http://glew.sf.net/">GLEW</a> and <a href="http://prideout.net/blog/?p=11">GLSW</a>, both of which consist of just a few small C files that are built within the project itself.
+
+<div id="easy_contents" class="easysmallcontents" >
+<ol>
+<li><a href="#per-pixel">Per-Pixel Lighting</a></li>
+<li><a href="#tessellating">Tessellating the Trefoil Knot</a></li>
+<li><a href="#toon">Toon Shading</a></li>
+<li><a href="#antialiasing">Antialiasing</a></li>
+<li><a href="#minimalism">OpenGL Minimalism</a></li>
+<li><a href="#downloads">Downloads</a></li>
+</ol>
+</div>
+
+I settled on <a href="http://www.cmake.org/">CMake</a> for my build tool, which I'm starting to love.  Don't scream "No, not another build tool!!"  In the words of Alan Kay, <i>Simple things should be simple, complex things should be possible.</i>  CMake takes this to heart.  It's lightweight, cross-platform, and well-worn; it's used in popular packages like Blender, KDE, LLVM, and Boost.  Best of all, it doesn't just generate makefiles, it can generate actual IDE projects that you can open with Visual Studio, Xcode, etc.
+
+<h2 id="per-pixel">Per-Pixel Lighting</h2>
+
+Before writing a cel shader, let's come up with a standard per-pixel lighting effect, then modify it to produce a cartoony result.  With standard diffuse+specular lighting, we should see something like this:
+
+<img src="http://prideout.net/blog/wp-content/uploads/2010/05/FinalPixel.png" alt="Per-Pixel Lighting" />
+
+Now here's the GLSL effect:
+
+[glsl]
+-- Vertex
+
+in vec4 Position;
+in vec3 Normal;
+
+uniform mat4 Projection;
+uniform mat4 Modelview;
+uniform mat3 NormalMatrix;
+uniform vec3 DiffuseMaterial;
+
+out vec3 EyespaceNormal;
+out vec3 Diffuse;
+
+void main()
+{
+    EyespaceNormal = NormalMatrix * Normal;
+    gl_Position = Projection * Modelview * Position;
+    Diffuse = DiffuseMaterial;
+}
+
+-- Fragment
+
+in vec3 EyespaceNormal;
+in vec3 Diffuse;
+out vec4 FragColor;
+
+uniform vec3 LightPosition;
+uniform vec3 AmbientMaterial;
+uniform vec3 SpecularMaterial;
+uniform float Shininess;
+
+void main()
+{
+    vec3 N = normalize(EyespaceNormal);
+    vec3 L = normalize(LightPosition);
+    vec3 E = vec3(0, 0, 1);
+    vec3 H = normalize(L + E);
+    
+    float df = max(0.0, dot(N, L));
+    float sf = max(0.0, dot(N, H));
+    sf = pow(sf, Shininess);
+
+    vec3 color = AmbientMaterial + df * Diffuse + sf * SpecularMaterial;
+    FragColor = vec4(color, 1.0);
+}
+[/glsl]
+
+I won't go into a detailed explanation since you can pick up any graphics book (including <a href="http://amzn.to/do1nHZ">mine</a>) and find an explanation of the math behind real-time lighting.  However, it's important to notice the diffuse factor (<b>df</b>) and specular factor (<b>sf</b>) variables, since we'll be manipulating them later in the post.  They each represent a level of intensity from 0 to 1.
+
+By the way, the gray '&#45;&#45;' section dividers are not legal in the shading language, but they get parsed out when using <a href="http://prideout.net/blog/?p=11">The OpenGL Shader Wrangler</a> for managing shader strings.
+
+<h2 id="tessellating">Tessellating the Trefoil Knot</h2>
+
+The Trefoil shape is just a parametric surface.  I'll list a few key functions here that build out the indexed triangle list.  First, let's define some constants:
+
+[cpp]
+static const int Slices = 128;
+static const int Stacks = 32;
+static const int VertexCount = Slices * Stacks;
+static const int IndexCount = VertexCount * 6;
+[/cpp]
+
+<b>Slices</b> and <b>Stacks</b> control how the domain gets sampled.  For coarse tessellation, use small numbers; for tiny triangles, use large numbers.
+
+Next let's write the evaluation function for the knot shape.  The coordinates in the domain are in [0, 1].  Despite appearances, the following code snippet is C++, not GLSL!  The custom <b>vec3</b> type is designed to mimic GLSL's built-in <b>vec3</b> type.  (See <b>Vector.hpp</b> in the sample code.)
+
+[cpp]
+vec3 EvaluateTrefoil(float s, float t)
+{
+    const float a = 0.5f;
+    const float b = 0.3f;
+    const float c = 0.5f;
+    const float d = 0.1f;
+    const float u = (1 - s) * 2 * TwoPi;
+    const float v = t * TwoPi;
+    const float r = a + b * cos(1.5f * u);
+    const float x = r * cos(u);
+    const float y = r * sin(u);
+    const float z = c * sin(1.5f * u);
+
+    vec3 dv;
+    dv.x = -1.5f * b * sin(1.5f * u) * cos(u) -
+            (a + b * cos(1.5f * u)) * sin(u);
+    dv.y = -1.5f * b * sin(1.5f * u) * sin(u) +
+            (a + b * cos(1.5f * u)) * cos(u);
+    dv.z = 1.5f * c * cos(1.5f * u);
+
+    vec3 q = dv.Normalized();
+    vec3 qvn = vec3(q.y, -q.x, 0).Normalized();
+    vec3 ww = q.Cross(qvn);
+        
+    vec3 range;
+    range.x = x + d * (qvn.x * cos(v) + ww.x * sin(v));
+    range.y = y + d * (qvn.y * cos(v) + ww.y * sin(v));
+    range.z = z + d * ww.z * sin(v);
+    return range;
+}
+[/cpp]
+
+Next up is the code that calls the preceding function many times, building up a list of positions and normals along the way.  It also creates the VBO and returns its handle:
+
+[cpp]
+GLuint CreateVertexBuffer()
+{
+    Vertex verts[VertexCount];
+    Vertex* pVert = &verts[0];
+
+    float ds = 1.0f / Slices;
+    float dt = 1.0f / Stacks;
+
+    // The upper bounds in these loops are tweaked to reduce the
+    // chance of precision error causing an incorrect # of iterations.
+    
+    for (float s = 0; s < 1 - ds / 2; s += ds)
+    {
+        for (float t = 0; t < 1 - dt / 2; t += dt)
+        {
+            const float E = 0.01f;
+            vec3 p = EvaluateTrefoil(s, t);
+            vec3 u = EvaluateTrefoil(s + E, t) - p;
+            vec3 v = EvaluateTrefoil(s, t + E) - p;
+            vec3 n = u.Cross(v).Normalized();
+
+            pVert->Position = p;
+            pVert->Normal = n;
+            ++pVert;
+        }
+    }
+
+    assert(pVert - &verts[0] == VertexCount);
+
+    GLuint handle;
+    GLsizeiptr size = sizeof(verts);
+    const GLvoid* data = verts[0].Position.Pointer();
+    GLenum usage = GL_STATIC_DRAW;
+
+    glGenBuffers(1, &handle);
+    glBindBuffer(GL_ARRAY_BUFFER, handle);
+    glBufferData(GL_ARRAY_BUFFER, size, data, usage);
+
+    return handle;
+}
+[/cpp]
+
+So far all we've done is create a cloud of points without trying to connect them up into triangles.  That brings us to the next task, building the VBO of triangle indices:
+
+[cpp]
+GLuint CreateIndexBuffer()
+{
+    GLushort inds[IndexCount];
+    GLushort* pIndex = &inds[0];
+
+    GLushort n = 0;
+    for (GLushort i = 0; i < Slices; i++)
+    {
+        for (GLushort j = 0; j < Stacks; j++)
+        {
+            *pIndex++ = n + j;
+            *pIndex++ = n + (j + 1) % Stacks;
+            *pIndex++ = (n + j + Stacks) % VertexCount;
+
+            *pIndex++ = (n + j + Stacks) % VertexCount;
+            *pIndex++ = (n + (j + 1) % Stacks) % VertexCount;
+            *pIndex++ = (n + (j + 1) % Stacks + Stacks) % VertexCount;
+        }
+        n += Stacks;
+    }
+
+    assert(n == VertexCount);
+    assert(pIndex - &inds[0] == IndexCount);
+
+    GLuint handle;
+    GLsizeiptr size = sizeof(inds);
+    const GLvoid* data = &inds[0];
+    GLenum usage = GL_STATIC_DRAW;
+
+    glGenBuffers(1, &handle);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, handle);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, size, data, usage);
+
+    return handle;
+}
+[/cpp]
+
+That's it for the geometry portion of the demo!
+
+<h2 id="toon">Toon Shading</h2>
+
+Finally, we get to the meat of the article.  Here's the effect we're after:
+
+<img src="http://prideout.net/blog/wp-content/uploads/2010/05/FinalToon.png" alt="Cel Shading" />
+
+Recall that the fragment shader for per-pixel lighting computed a diffuse factor and a specular factor, both of which represent intensity on a zero-to-one scale:
+
+[glsl]
+void main()
+{
+    // .. snip
+    
+    float df = max(0.0, dot(N, L));
+    float sf = max(0.0, dot(N, H));
+    sf = pow(sf, Shininess);
+    
+    vec3 color = AmbientMaterial + df * Diffuse + sf * SpecularMaterial;
+    FragColor = vec4(color, 1.0);
+}
+[/glsl]
+
+You can think of the diffuse and specular factors as separate non-linear color gradients that get added together.
+
+We need to chop up those color gradients into a small number of regions, then flood those areas with a solid color. Let's chop up the diffuse gradient into 4 intervals, and chop specular into 2 intervals.  Insert the gray lines into your fragment shader:
+
+[glsl highlight="5,6,7,8,11,12,13,14,17"]
+void main()
+{
+    // .. snip
+    
+    const float A = 0.1;
+    const float B = 0.3;
+    const float C = 0.6;
+    const float D = 1.0;
+
+    float df = max(0.0, dot(N, L));
+    if (df < A) df = 0.0;
+    else if (df < B) df = B;
+    else if (df < C) df = C;
+    else df = D;
+    float sf = max(0.0, dot(N, H));
+    sf = pow(sf, Shininess);
+    sf = step(0.5, sf);
+
+    vec3 color = AmbientMaterial + df * Diffuse + sf * SpecularMaterial;
+    FragColor = vec4(color, 1.0);
+}
+[/glsl]
+
+That's all there is to it!  Note the sneaky usage of the GLSL <b>step</b> function for specular.  It's defined like this:
+
+[glsl]
+float step(float edge, float x)
+{
+    return x < edge ? 0.0 : 1.0;
+}
+[/glsl]
+
+Makes sense eh?
+
+<h2 id="antialiasing">Antialiasing</h2>
+
+Let's zoom in on the color bands:
+
+<img src="http://prideout.net/blog/wp-content/uploads/2010/05/ZoomToon.png" alt="Aliased Color Bands" />
+
+Ewww!! Gotta do something about that aliasing.
+
+Let's start with the specular highlight since it has only two regions.  One way of achieving antialiasing is creating a smooth gradient that's only a few pixels wide, right where the hard edge occurs.  Let's add an <b>if</b> that checks if the current pixel is within an epsilon (<b>E</b> in the code) of the hard edge.  If so, it manipulates the specular factor to smoothly transition between the two colors:
+
+[glsl highlight="5,6,7,8,9,10,11,13"]
+void main()
+{
+    // snip...
+    
+    float E = ?;
+    if (sf > 0.5 - E && sf < 0.5 + E)
+    {
+        sf = smoothstep(0.5 - E, 0.5 + E, sf);
+    }
+    else
+    {
+        sf = step(0.5, sf);
+    }
+
+    vec3 color = AmbientMaterial + df * Diffuse + sf * SpecularMaterial;
+    FragColor = vec4(color, 1.0);
+}
+[/glsl]
+
+I put a <b>?</b> placeholder for the epsilon value; we'll deal with it later.  The <b>smoothstep</b> function might be new to you. It returns a value in the [0, 1] range based on its three inputs.  GLSL defines it like this:
+
+[glsl]
+float smoothstep(float edge0, float edge1, float x)
+{
+    if (x <= edge0)
+        return 0.0;
+        
+    if (x >= edge1)
+        return 1.0;
+
+    float t = clamp((x – edge0) / (edge1 – edge0), 0, 1);
+    return t * t * (3 – 2 * t);
+}
+[/glsl]
+
+To summarize <b>smoothstep</b>, it returns 0 or 1 if <b>x</b> falls outside the given range; if <b>x</b> falls within the given range, it returns an interpolated value between 0 and 1.  The fancy <b>t*t*(3-2*t)</b> transformation that you see on the last line is Hermite interpolation.  Hermite interpolation helps with drawing curves, but it's a bit overkill in our case.  Linear interpolation is probably good enough; for potentially better performance, you can replace the call to <b>smoothstep</b> with this:
+
+[glsl light="true"]
+sf = clamp(0.5 * (sf - 0.5 + E) / E, 0.0, 1.0);
+[/glsl]
+
+Next, let's figure out how come up with a good epsilon value (<b>E</b>).  Your first instinct might be to choose a small value out of the sky, say 0.01.  The problem with picking a constant value is that it's good only for a given distance from the camera.  If you zoom in, it'll look blurry; if you zoom out, it'll look aliased.  This is where derivatives come to the rescue.  They tell you how quickly a given value is changing from one pixel to the next.  GLSL provides three functions for derivatives: <b>dFdx</b>, <b>dFdy</b>, and <b>fwidth</b>.  For our purposes, <b>fwidth</b> suffices.  Our fragment shader now looks like this:
+
+[glsl highlight="16,19"]
+void main()
+{
+    // snip...
+    
+    const float A = 0.1;
+    const float B = 0.3;
+    const float C = 0.6;
+    const float D = 1.0;
+
+    float df = max(0.0, dot(N, L));
+    if (df < A) df = 0.0;
+    else if (df < B) df = B;
+    else if (df < C) df = C;
+    else df = D;
+
+    float E = fwidth(sf);
+    if (sf > 0.5 - E && sf < 0.5 + E)
+    {
+        sf = clamp(0.5 * (sf - 0.5 + E) / E, 0.0, 1.0);
+    }
+    else
+    {
+        sf = step(0.5, sf);
+    }
+
+    vec3 color = AmbientMaterial + df * Diffuse + sf * SpecularMaterial;
+    FragColor = vec4(color, 1.0);
+}
+[/glsl]
+
+Next we need to tackle the transitions between the four bands of diffuse intensity.  For specular antialiasing, we computed a value between 0 and 1, but this time we'll need to generate values within various sub-intervals.  The four bands of diffuse color are:
+
+<ul>
+<li>0 to A</li>
+<li>A to B</li>
+<li>B to C</li>
+<li>C to D</li>
+</ul>
+
+Since there are four bands of color, there are three transitions that we need to antialias.  The built-in <b>mix</b> function could be useful for this; it performs simple linear interpolation:
+
+[glsl]
+float mix(float a, float b, float t)
+{
+    return a * (1.0 - t) + b * t;
+}
+[/glsl]
+
+We can combine <b>mix</b> and <b>smoothstep</b> to achieve the effect we're after, like so:
+
+[glsl highlight="10,11,12,13,14,15,16"]
+void main()
+{
+    // snip...
+    
+    const float A = 0.1;
+    const float B = 0.3;
+    const float C = 0.6;
+    const float D = 1.0;
+
+    float E = fwidth(df);
+    if (df > A - E && df < A + E)
+        df = mix(A, B, smoothstep(A - E, A + E, df));
+    else if (df > B - E && df < B + E)
+        df = mix(B, C, smoothstep(B - E, B + E, df));
+    else if (df > C - E && df < C + E)
+        df = mix(C, D, smoothstep(C - E, C + E, df));
+    else if (df < A) df = 0.0;
+    else if (df < B) df = B;
+    else if (df < C) df = C;
+    else df = D;
+
+    // snip...
+}
+[/glsl]
+
+Again, smoothstep is a bit overkill, so we can optimize it a bit.  Let's define our own function called <b>stepmix</b>.  The final fragment shader is:
+
+[glsl]
+in vec3 EyespaceNormal;
+in vec3 Diffuse;
+out vec4 FragColor;
+
+uniform vec3 LightPosition;
+uniform vec3 AmbientMaterial;
+uniform vec3 SpecularMaterial;
+uniform float Shininess;
+
+float stepmix(float edge0, float edge1, float E, float x)
+{
+    float T = clamp(0.5 * (x - edge0 + E) / E, 0.0, 1.0);
+    return mix(edge0, edge1, T);
+}
+
+void main()
+{
+    vec3 N = normalize(EyespaceNormal);
+    vec3 L = normalize(LightPosition);
+    vec3 Eye = vec3(0, 0, 1);
+    vec3 H = normalize(L + Eye);
+    
+    float df = max(0.0, dot(N, L));
+    float sf = max(0.0, dot(N, H));
+    sf = pow(sf, Shininess);
+
+    const float A = 0.1;
+    const float B = 0.3;
+    const float C = 0.6;
+    const float D = 1.0;
+    float E = fwidth(df);
+
+    if      (df > A - E && df < A + E) df = stepmix(A, B, E, df);
+    else if (df > B - E && df < B + E) df = stepmix(B, C, E, df);
+    else if (df > C - E && df < C + E) df = stepmix(C, D, E, df);
+    else if (df < A) df = 0.0;
+    else if (df < B) df = B;
+    else if (df < C) df = C;
+    else df = D;
+
+    E = fwidth(sf);
+    if (sf > 0.5 - E && sf < 0.5 + E)
+    {
+        sf = smoothstep(0.5 - E, 0.5 + E, sf);
+    }
+    else
+    {
+        sf = step(0.5, sf);
+    }
+
+    vec3 color = AmbientMaterial + df * Diffuse + sf * SpecularMaterial;
+    FragColor = vec4(color, 1.0);
+}
+[/glsl]
+
+Et voila!  Here's the result:
+
+<img src="http://prideout.net/blog/wp-content/uploads/2010/05/ZoomToonAa.png" alt="Antialiased Color Bands" />
+
+Granted, the silhouette of the object is still aliased, but at least those color bands are nice and smooth.  To fix the silhouette, you'd need to turn on multisampling or apply some fancy post-processing.  (Check out a really cool paper called <a href="http://visual-computing.intel-research.net/publications/papers/2009/mlaa/mlaa.pdf">Morphological Antialiasing</a> for more on that subject.)
+
+Another thing you could do is draw some smooth lines along the silhouette, which I'll discuss in another post.
+
+<h2 id="minimalism">OpenGL Minimalism</h2>
+
+<img src="http://prideout.net/blog/wp-content/uploads/2010/05/Folder3.png" alt="Demo Folders" class="alignright size-medium wp-image-12" />
+
+At the beginning of this article, I claimed I'd take a minimalist approach with the code.  I ended up using "classless C++" for the demo. As soon as I design a class, I want to design an interface, then I start sliding down the slippery slope of complexity; I furiously write more and more infrastructure.  That might be fine for scalable software, but it gets in the way when you're writing little demos for teaching purposes.  So I told myself that I'm just like Fat Albert -- no class.
+
+You might wonder why I didn't use ANSI C or C99.  With modern OpenGL you need your own vector math routines (See <b>Matrix.hpp</b> and <b>Vector.hpp</b> in the sample code), and the expressiveness of C++ is irresistible for this.  Operator overloading allows you to create your own <b>vec3</b> type that looks and feels a lot like the <b>vec3</b> type in GLSL (which is exactly what I've done).
+
+I tested this code on Mac OS X, Ubuntu, and Windows.  All OpenGL calls are restricted to a single file (<b>Trefoil.cpp</b>).  Enjoy!
+
+<h2 id="downloads">Downloads</h2>
+
+<ul>
+<li><a href="http://prideout.net/blog/aacel/aacel.zip">aacel.zip</a></li>
+<li><a href="http://prideout.net/blog/aacel/aacel.tar.gz">aacel.tar.gz</a></li>
+<li><a href="http://prideout.net/blog/aacel/Trefoil.cpp">Trefoil.cpp</a></li>
+</ul>

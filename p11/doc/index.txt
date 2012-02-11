@@ -1,0 +1,177 @@
+
+.. ShaderWrangler documentation master file
+   Written by Philip Rideout in April of 2010
+
+.. toctree::
+   :maxdepth: 2
+
+   self
+   api_reference
+   glsw_h
+   glsw_c
+
+=============
+Justification
+=============
+
+I work with OpenGL shaders a lot.  Now more than ever.
+
+With the advent of OpenGL ES 2.0 and forward-compatible OpenGL 3.0+, usage of shaders is not limited to advanced effects; you **always** need to have a shader applied when making a draw call.
+
+If you're like me, you might be annoyed by certain paterns:
+
+ - Working with pairs of files (e.g., Blur.vert and Blur.frag) seems innocous at first, but it becomes a hassle after a while.  If you want to add a new varying between the VS and FS, you have to open up both files.  With geometry shaders, you have triplets.  With OpenGL 4, you have sixtuplets! (TessellationControl and TessellationEvaluation)
+
+ - Handling multiple versions of OpenGL by shadowing an entire folder is high-maintenance, and humans have a hard time with a deep folder hierarchy:
+
+  An alternative is flattening the hierarchy like this:
+
+   Foo.gl2.vert
+   Foo.gl2.frag
+   Foo.gl3.vert
+   Foo.gl3.geom
+   Foo.gl3.frag
+   Foo.es2.vert
+   Foo.es2.frag
+  
+  I prefer this to the folder hierarchy, but it makes for long listings and prolonged file-hunting.
+
+ - Adding a #version 3 feels messy.
+
+ - COLLADA frightens you.  It tries to boil the ocean, but you're just trying to evaporate some sweat.
+
+ - You found tons of "fx-like" technique file formats for OpenGL, but they haven't kept up with recent advanced in OpenGL.
+
+ - You're not really pining for all the features of an FX file, like setting blend state and what not.  You can do that from your C/C++ code.
+
+ - You don't really need fancy cross-referencing and mix-n-match of shaders.
+
+Two realizations:
+
+ - A single file is a logical unit for a single technique, which is a small (2 - 6) bundle of shaders.
+
+ - Duplicated code is a classic "bad code smell", but it's probably fine for simple shaders.  For example, duplicating the same simple pass-through Vertex Shader in several technique files is an ok practice, and makes it easier to add enhancements later.
+
+ - You really just need to wrangle strings, not specify entire effects declaratively.
+
+Here's a sample file listing of a project I'm working on.  If I have OpenGL 2 and OpenGL 3 variants of a shader, I put them both into the same file.  The vertex shader and fragment shader exist in the same file too::
+
+	prideout@prideout-ubuntu:~/demo-framework/Shaders$ ls
+	EuclidianBlit.glsl       ManhattanVisualize.glsl
+	EuclidianErosion.glsl    SignedEuclidianBlit.glsl
+	EuclidianScene.glsl      SignedEuclidianErosion.glsl
+	EuclidianVisualize.glsl  SignedEuclidianScene.glsl
+	ManhattanBlit.glsl       SignedEuclidianVisualize.glsl
+	ManhattanGrassfire.glsl  SolidColor.glsl
+	ManhattanScene.glsl      WriteText.glsl
+
+===========
+File Format
+===========
+
+Two or more dashes is a seperator.
+
+Some code::
+
+	All text up here is ignored.
+
+
+	--OpenGL3--VertexShader--
+
+	void main()
+	{
+	}
+
+	----------------OpenGL3--FragmentShader----------------
+
+	void main()
+	{
+	}
+
+
+	----OpenGLES2----VertexShader----
+
+	void main()
+	{
+	}
+
+
+	----OpenGLES2----FragmentShader----
+
+	void main()
+	{
+	}
+
+
+	----OpenGL2----FragmentShader----Horizontal----
+
+	void main()
+	{
+	}
+
+	----OpenGL2----FragmentShader----Vertical----
+
+	void main()
+	{
+	}
+
+	----OpenGL4----TessellationShader
+
+	void main()
+	{
+	}
+
+	----OpenGL4----FragmentShader.Pass1
+
+	void main()
+	{
+	}
+
+	----OpenGL4----FragmentShader.Pass2
+
+	void main()
+	{
+	}
+	
+=========
+API Usage
+=========
+
+First, some terminology:
+
+.. glossary::
+
+   effect
+      A bundle of shaders, defined within a single file.
+
+   shader
+      Single unit of compilation.
+
+   program
+      This is an OpenGL concept that refers to a linked collection of shaders; it has nothing to do with GLSW.
+
+Example API::
+
+	glswSetEffectPrefix("OpenGL3");
+	glswSetEffectExtension(".glsl");
+	glswSetEffectPath("../Shaders/");
+	glswSetShaderPrefix("#version 130")
+	const char* vs = glswGetShaderText("EuclidianErosion.VertexShader")
+	const char* fs = glswGetShaderText("EuclidianErosion.FragmentShader.Horizontal")
+
+	glShaderSource(vs);
+
+Inserts null characters
+Has a string hash map
+
+
+Typically:
+
+"{Filename}.{API}.{ShaderStage}.{Mode}"
+
+Note the first are swapped.
+
+But, not enforced.  Only the {Filename} is enforced.
+
+You can have as much hierarchy as you want.  But, you shouldn't need a very deep hierarchy, especially if you're leveraging the hot-swappable subroutines that were introduced with OpenGL 4.
+

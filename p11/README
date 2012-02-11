@@ -1,0 +1,76 @@
+
+------------------------------------------
+Step 1 - Download and Install CMake
+------------------------------------------
+
+CMake is a cross-platform build system that you can get from here:
+
+http://www.cmake.org/cmake/resources/software.html
+
+If you're on Ubuntu, don't bother with the web site; just type this:
+
+   > sudo apt-get install CMake
+
+You might be thinking "Oh no, not another build system!!"  Don't get your panties in a wad.
+CMake is lightweight and popular; it's used in big-shot packages like Blender, KDE, and Boost.
+It generates makefiles or project files for IDE's like Visual Studio and Xcode.
+
+------------------------------------------
+Step 2 - Choose Your Own Adventure
+------------------------------------------
+
+Open a command prompt and perform the following steps, depending on your platform:
+
+VISUAL STUDIO 2010:
+
+   > mkdir Build
+   > cd Build
+   > cmake .. -G "Visual Studio 10"  
+   > glsw.sln
+   > Right-click "glsw" in Solution Explorer and make it your StartUp Project.
+   > Press F5
+    
+If you're using an older Visual Studio, just run "cmake" (no arguments) to see a list of options.
+For example, a 2005 project can be built like this:
+
+   > cmake .. -G "Visual Studio 8 2005"
+
+LINUX OR MAC:
+
+   > mkdir Build
+   > cd Build
+   > cmake ..
+   > make
+   > ./glsw
+
+IF YOU WANT TO DEBUG WITH GDB:
+
+   > mkdir Build
+   > cd Build
+   > cmake .. -DCMAKE_BUILD_TYPE=Debug
+   > make
+   > gdb glsw
+   > break Main.cpp:7
+   > run
+
+------------------------------------------
+Step 3 - Testing
+------------------------------------------
+
+After successfully building everything, you can do this from the Build folder:
+
+   > make test
+
+Alternatively:
+
+   > ctest
+   
+If you want to run only those tests that contains the string "Shader":
+
+   > ctest -R Shader
+
+The "Shader" in the above example is actually a full-blown regexp.
+
+You can also enable verbose output like this:
+
+   > ctest -R Shader -V

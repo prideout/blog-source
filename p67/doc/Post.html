@@ -1,0 +1,189 @@
+<iframe class="alignright size-medium wp-image-12" style="margin-left:10px" src="http://player.vimeo.com/video/19332123?title=0&amp;byline=0&amp;portrait=0&amp;autoplay=1&amp;loop=1" width="150" height="300" frameborder="0"></iframe>
+
+In <a href="http://prideout.net/blog/?p=63">Part I</a>, I covered Bridson's "curl noise" method for particle advection, describing how to build a static grid of velocity vectors.  I portrayed the construction process as an acyclic image processing graph, where the inputs are volumetric representations of obstacles and turbulence.
+
+The demo code in Part I was a bit lame, since it moved particles on the CPU.  In this post, I show how to perform advection on the GPU using GL_TRANSFORM_FEEDBACK.  For more complex particle management, I'd probably opt for OpenCL/CUDA, but for something this simple, transform feedback is the easiest route to take.
+
+<h2 id="init">Initialization</h2>
+
+In my particle simulation, the number of particles remains fairly constant, so I decided to keep it simple by ping-ponging two staticly-sized VBOs.  The beauty of transform feedback is that the two VBOs can stay in dedicated graphics memory; no bus travel.
+
+In the days before transform feedback (and CUDA), the only way to achieve GPU-based advection was sneaky usage of the fragment shader and a one-dimensional FBO.  Those days are long gone -- OpenGL now allows you to effectively shut off the rasterizer, performing advection completely in the vertex shader and/or geometry shader.
+
+The first step is creating the two ping-pong VBOs, which is done like you'd expect:
+
+[cpp]
+GLuint ParticleBufferA, ParticleBufferB;
+const int ParticleCount = 100000;
+ParticlePod seed_particles[ParticleCount] = { ... };
+
+// Create VBO for input on even-numbered frames and output on odd-numbered frames:
+glGenBuffers(1, &ParticleBufferA);
+glBindBuffer(GL_ARRAY_BUFFER, ParticleBufferA);
+glBufferData(GL_ARRAY_BUFFER, sizeof(seed_particles), &seed_particles[0], GL_STREAM_DRAW);
+glBindBuffer(GL_ARRAY_BUFFER, 0);
+
+// Create VBO for output on even-numbered frames and input on odd-numbered frames:
+glGenBuffers(1, &ParticleBufferB);
+glBindBuffer(GL_ARRAY_BUFFER, ParticleBufferB);
+glBufferData(GL_ARRAY_BUFFER, sizeof(seed_particles), 0, GL_STREAM_DRAW);
+glBindBuffer(GL_ARRAY_BUFFER, 0);
+[/cpp]
+
+Note that I provided some initial seed data in ParticleBufferA, but I left ParticleBufferB uninitialized.  This initial seeding is the only CPU-GPU transfer in the demo.
+
+By the way, I don't think the <b>GL_STREAM_DRAW</b> hint really matters; most drivers are smart enough to manage memory in a way that they think is best.
+
+The only other initialization task is binding the outputs from the vertex shader (or geometry shader).  Watch out because this needs to take place after you compile the shaders, but before you link them: 
+
+[cpp highlight="8,9"]
+GLuint programHandle = glCreateProgram();
+
+GLuint vsHandle = glCreateShader(GL_VERTEX_SHADER);
+glShaderSource(vsHandle, 1, &vsSource, 0);
+glCompileShader(vsHandle);
+glAttachShader(programHandle, vsHandle);
+
+const char* varyings[3] = { "vPosition", "vBirthTime", "vVelocity" };
+glTransformFeedbackVaryings(programHandle, 3, varyings, GL_INTERLEAVED_ATTRIBS);
+
+glLinkProgram(programHandle);
+[/cpp]
+
+Yep, that's a OpenGL program object that only has a vertex shader attached; no fragment shader!
+
+I realize it smells suspiciously like Hungarian, but I like to prefix my vertex shader outputs with a lowercase "v", geometry shader outputs with lowercase "g", etc.  It helps me avoid naming collisions when trickling a value through the entire pipe.
+
+<h2 id="shader">Advection Shader</h2>
+
+The vertex shader for noise-based advection is crazy simple.  I stole the <b>randhash</b> function from a Robert Bridson demo; it was surprisingly easy to port to GLSL.
+
+[cpp]
+-- Vertex Shader
+
+in vec3 Position;
+in float BirthTime;
+in vec3 Velocity;
+
+out vec3 vPosition;
+out float vBirthTime;
+out vec3 vVelocity;
+
+uniform sampler3D Sampler;
+uniform vec3 Size;
+uniform vec3 Extent;
+uniform float Time;
+uniform float TimeStep = 5.0;
+uniform float InitialBand = 0.1;
+uniform float SeedRadius = 0.25;
+uniform float PlumeCeiling = 3.0;
+uniform float PlumeBase = -3;
+
+const float TwoPi = 6.28318530718;
+const float InverseMaxInt = 1.0 / 4294967295.0;
+
+float randhash(uint seed, float b)
+{
+    uint i=(seed^12345391u)*2654435769u;
+    i^=(i<<6u)^(i>>26u);
+    i*=2654435769u;
+    i+=(i<<5u)^(i>>12u);
+    return float(b * i) * InverseMaxInt;
+}
+
+vec3 SampleVelocity(vec3 p)
+{
+    vec3 tc;
+    tc.x = (p.x + Extent.x) / (2 * Extent.x);
+    tc.y = (p.y + Extent.y) / (2 * Extent.y);
+    tc.z = (p.z + Extent.z) / (2 * Extent.z);
+    return texture(Sampler, tc).xyz;
+}
+
+void main()
+{
+    vPosition = Position;
+    vBirthTime = BirthTime;
+
+    // Seed a new particle as soon as an old one dies:
+    if (BirthTime == 0.0 || Position.y > PlumeCeiling) {
+        uint seed = uint(Time * 1000.0) + uint(gl_VertexID);
+        float theta = randhashf(seed++, TwoPi);
+        float r = randhashf(seed++, SeedRadius);
+        float y = randhashf(seed++, InitialBand);
+        vPosition.x = r * cos(theta);
+        vPosition.y = PlumeBase + y;
+        vPosition.z = r * sin(theta);
+        vBirthTime = Time;
+    }
+
+    // Advance the particle using an additional half-step to reduce numerical issues:
+    vVelocity = SampleVelocity(Position);
+    vec3 midx = Position + 0.5f * TimeStep * vVelocity;
+    vVelocity = SampleVelocity(midx);
+    vPosition += TimeStep * vVelocity;
+}
+[/cpp]
+
+Note the sneaky usage of <b>gl_VertexID</b> to help randomize the seed.  Cool eh?
+
+<h2 id="feedback">Using Transform Feedback</h2>
+
+Now let's see how to apply the above shader from your application code.  You'll need to use three functions that you might not be familiar with: <b>glBindBufferBase</b> specifies the target VBO, and <b>gl{Begin/End}TransformFeedback</b> delimits the draw call that performs advection.   I've highlighted these calls below, along with the new enable that allows you to turn off rasterization:
+
+[cpp highlight="6,15,18,21,25"]
+// Set up the advection shader:
+glUseProgram(ParticleAdvectProgram);
+glUniform1f(ParticleAdvectProgram, timeLoc, currentTime);
+
+// Specify the source buffer:
+glEnable(GL_RASTERIZER_DISCARD);
+glBindBuffer(GL_ARRAY_BUFFER, ParticleBufferA);
+glEnableVertexAttribArray(SlotPosition);
+glEnableVertexAttribArray(SlotBirthTime);
+char* pOffset = 0;
+glVertexAttribPointer(SlotPosition, 3, GL_FLOAT, GL_FALSE, 16, pOffset);
+glVertexAttribPointer(SlotBirthTime, 1, GL_FLOAT, GL_FALSE, 16, 12 + pOffset);
+
+// Specify the target buffer:
+glBindBufferBase(GL_TRANSFORM_FEEDBACK_BUFFER, 0, ParticleBufferB);
+
+// Perform GPU advection:
+glBeginTransformFeedback(GL_POINTS);
+glBindTexture(GL_TEXTURE_3D, VelocityTexture.Handle);
+glDrawArrays(GL_POINTS, 0, ParticleCount);
+glEndTransformFeedback();
+
+// Swap the A and B buffers for ping-ponging, then turn the rasterizer back on:
+std::swap(ParticleBufferA, ParticleBufferB);
+glDisable(GL_RASTERIZER_DISCARD);
+[/cpp]
+
+The last step is actually rendering the post-transformed particles:
+
+[cpp]
+glUseProgram(ParticleRenderProgram);
+glBindBuffer(GL_ARRAY_BUFFER, ParticleBufferA);
+glVertexAttribPointer(SlotPosition, 3, GL_FLOAT, GL_FALSE, 16, pOffset);
+glVertexAttribPointer(SlotBirthTime, 1, GL_FLOAT, GL_FALSE, 16, 12 + pOffset);
+glDrawArrays(GL_POINTS, 0, ParticleCount);
+[/cpp]
+
+In my case, rendering the particles was definitely the bottleneck; the advection was insanely fast.  As covered in Part I, I use the geometry shader to extrude points into view-aligned billboards that get stretched according to the velocity vector.  An interesting extension to this approach would be to keep a short history (3 or 4 positions) with each particle, allowing nice particle trails, also known as "particle traces".  This brings back memories of the ASCII snake games of my youth (does anyone remember QBasic Nibbles?)
+
+Well, that's about it!  Please realize that I've only covered the simplest possible usage of transform feedback.  OpenGL 4.0 introduced much richer functionality, allowing you to intermingle several VBOs in any way you like, and executing draw calls without any knowledge of buffer size.  If you want to learn more, check out this nice write-up from Christophe Riccio, where he describes the evolution of transform feedback:
+
+<a href="http://www.g-truc.net/post-0269.html">http://www.g-truc.net/post-0269.html</a>
+
+<h2 id="downloads">Downloads</h2>
+
+The first time you run my demo, it'll take a while to initialize because it needs to construct the velocity field.  On subsequent runs, it loads the data from an external file, so it starts up quickly.  Note that I'm using the CPU to generate the velocity field; performing it on the GPU would be much, much faster.
+
+I've tested the code with Visual Studio 2010.  It uses <a href="http://www.cmake.org/cmake/resources/software.html">CMake</a> for the build system.
+
+<ul>
+<li><a href="http://prideout.net/blog/p67/CurlNoise.zip">CurlNoise.zip</a></li>
+<li><a href="http://prideout.net/blog/p67/Shaders.glsl">Shaders.glsl</a></li>
+</ul>
+
+ The code is released under the <a href="http://unlicense.org/">unlicense</a> license.

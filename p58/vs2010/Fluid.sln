@@ -1,0 +1,26 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 11.00
+# Visual Studio 2010
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Fluid", "Fluid.vcxproj", "{7F950345-B44F-4423-8207-9807DC70CBC5}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Ecosystem", "Ecosystem.vcxproj", "{4398964E-6134-481C-AC32-30826607A348}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Win32 = Debug|Win32
+		Release|Win32 = Release|Win32
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{7F950345-B44F-4423-8207-9807DC70CBC5}.Debug|Win32.ActiveCfg = Debug|Win32
+		{7F950345-B44F-4423-8207-9807DC70CBC5}.Debug|Win32.Build.0 = Debug|Win32
+		{7F950345-B44F-4423-8207-9807DC70CBC5}.Release|Win32.ActiveCfg = Release|Win32
+		{7F950345-B44F-4423-8207-9807DC70CBC5}.Release|Win32.Build.0 = Release|Win32
+		{4398964E-6134-481C-AC32-30826607A348}.Debug|Win32.ActiveCfg = Debug|Win32
+		{4398964E-6134-481C-AC32-30826607A348}.Debug|Win32.Build.0 = Debug|Win32
+		{4398964E-6134-481C-AC32-30826607A348}.Release|Win32.ActiveCfg = Release|Win32
+		{4398964E-6134-481C-AC32-30826607A348}.Release|Win32.Build.0 = Release|Win32
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+EndGlobal

@@ -1,0 +1,64 @@
+#! /usr/bin/env python
+
+import sys
+
+VERSION = '0.0.1'
+APPNAME = 'fluid'
+
+headers = 'pez vectormath glsw glew'
+prefix = '../lib/'
+
+if sys.platform == 'win32':
+    EXE = r'.\build\%s.exe' % APPNAME
+else:
+    EXE = r'./build/%s' % APPNAME
+
+def run(gc):
+    gc.exec_command(EXE)
+    print
+
+def debug(gc):
+    gc.exec_command('gdb ' + EXE)
+    print
+
+def configure(gc):
+    gc.load('gcc')
+    gc.env.CFLAGS = ['-O3', '-std=c99', '-Wc++-compat']
+    gc.env.COMMON_DEFS = 'GLEW_STATIC OPENCTM_STATIC'
+    gc.check_cc(fragment=c99test, msg="Checking for C99")
+    if sys.platform == 'darwin':
+        gc.env.LIBPATH = '/usr/X11R6/lib'
+
+def build(gc):
+
+    gc.recurse('lib')
+    if sys.platform == 'win32':
+        libs = 'opengl32 gdi32'
+    else:
+        libs = 'X11 GL'
+
+    glob = gc.path.ant_glob
+
+    gc.program(
+        source = glob('*.c'),
+        includes = path_list(headers, prefix),
+        lib = libs,
+        use = 'ecosystem',
+        defines = gc.env.COMMON_DEFS,
+        target = 'fluid')
+
+def path_list(paths, prefix):
+    paths = paths.split(' ')
+    return map(lambda x:prefix+x, paths)
+
+c99test = '''
+int main() {
+    int i;
+    i = 0;
+    int j = 0;
+    for (int k = 0; k < 3; ++k) {
+        j += k;
+    }
+    return i+j;
+}
+'''

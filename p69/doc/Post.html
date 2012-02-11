@@ -1,0 +1,50 @@
+
+<iframe src="http://player.vimeo.com/video/20006855?title=0&amp;byline=0&amp;portrait=0&amp;autoplay=1&amp;loop=1" width="680" height="382" frameborder="0"></iframe>
+
+In the video, the light source is slowly spinning around the smoke stack, showing that a deep opacity map is generated at every frame.  For now it's being computed rather inefficiently, by performing a full raycast over each voxel in the light map.  Here's my fragment shader for generating the opacity map:
+
+[glsl]
+in float gLayer;
+out float FragColor;
+
+uniform sampler3D Density;
+uniform vec3 LightPosition = vec3(1.0, 1.0, 2.0);
+uniform float LightIntensity = 10.0;
+uniform float Absorption = 10.0;
+uniform float LightStep;
+uniform int LightSamples;
+uniform vec3 InverseSize;
+
+void main()
+{
+    vec3 pos = InverseSize * vec3(gl_FragCoord.xy, gLayer);
+    vec3 lightDir = normalize(LightPosition-pos) * LightStep;
+    float Tl = 1.0;
+    vec3 lpos = pos + lightDir;
+    
+    for (int s = 0; s < LightSamples; ++s) {
+        float ld = texture(Density, pos).x;
+        Tl *= 1.0 - Absorption * LightStep * ld;
+        if (Tl <= 0.01)
+            break;
+
+        // Would be faster if this conditional is replaced with a tighter loop
+        if (lpos.x < 0 || lpos.y < 0 || lpos.z < 0 ||
+            lpos.x > 1 || lpos.y > 1 || lpos.z > 1)
+            break;
+
+        lpos += lightDir;
+    }
+
+    float Li = LightIntensity*Tl;
+    FragColor = Li;
+}
+[/glsl]
+
+It would be much more efficient to align the light volume with the light direction, allowing you to remove the loop and accumulate results from the previous layer.  Normally you can't sample from the same texture that you're rendering to, but in this case it would be a different layer of the FBO, so it would be legal.
+
+Another potential optimization is using MRT with 8 render targets, and packing 4 depths into each layer; this would generate 32 layers per instance rather than just one!
+
+Here's another video just for fun, taken with a higher resolution grid.  It doesn't run at interactive rates (I forced the video to 30 fps) but the crepuscular shadow rays sure look cool:
+
+<iframe src="http://player.vimeo.com/video/20863998?title=0&amp;byline=0&amp;portrait=0&amp;loop=1" width="651" height="366" frameborder="0"></iframe>
