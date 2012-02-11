@@ -1,0 +1,401 @@
+<img class="alignright" src="http://prideout.net/blog/wp-content/uploads/2010/04/ComboLogo.png" />
+
+If you're an OpenGL developer, you might find yourself pining for an effect file format. You'd like a standard way of specifying shader strings, but without creating a kazillion little files for each shader.
+
+There aren't many alternatives. You're faced with such tantalizing possibilities as:
+<ul>
+	<li>Learn COLLADA and get mired in a Turing tarpit of entangled cross-referencing and XML namespacing.</li>
+	<li>Travel back in time to stop Khronos from abandoning their glFX effort.</li>
+	<li>Find someone's made-from-scratch solution, then discover that it's hopelessly outdated.</li>
+</ul>
+In this post, we'll explore the idea of using Lua as an effect file format.  We can live without some of the features that we'd expect in a more full-blown FX format (for example, having the ability to associate an effect with a specific blend or cull state).  In a way, we're simply using Lua as an organization tool for shaders.
+
+Let's try designating each Lua file as a single "effect", which we'll loosely define as "a bundle of shaders". Usually an effect declares at least one string for each programmable stage in the OpenGL pipeline. Later in the article, we'll group together shaders for various generations of OpenGL; this is convenient for applications that detect the platform's capabilities at run-time.
+
+Here's an obvious approach to specifying an effect with Lua (note how nicely Lua handles multi-line strings):
+
+[lua]
+-- Vertex Shader
+MyVertexShader = [[
+in vec4 Position;
+uniform mat4 Projection;
+void main()
+{
+    gl_Position = Projection * Position;
+}]]
+
+-- Fragment Shader
+MyFragmentShader = [[
+out vec4 FragColor;
+uniform vec4 FillColor;
+void main()
+{
+    FragColor = FillColor;
+}]]
+[/lua]
+
+Then, in your C/C++ code, you can do something like this:
+
+[cpp]
+lua_State* L = lua_open();
+luaL_dofile(L, "MyEffect.lua");
+lua_getglobal(L, "MyVertexShader");
+lua_getglobal(L, "MyFragmentShader");
+const char* vs_text = lua_tostring(L, -2);
+const char* fs_text = lua_tostring(L, -1);
+lua_pop(L, 2);
+glShaderSource(vs_handle, 1, &vs_text, 0);
+glShaderSource(fs_handle, 1, &fs_text, 0);
+[/cpp]
+
+Obviously you'd want to hide code like this behind a utility function or class method.  Also, you should always check the return value from <b>luaL_dofile</b>.  The code in this article is for illustrative purposes only.
+
+<h2>Fixing up the Line Numbers</h2>
+
+The problem with the above approach is that any error reporting from the shader compiler will have incorrect line numbers. In the preceding example, if the shader compiler reports an issue with line 1 of the fragment shader, then the relevant line is actually line 12 of the Lua file.
+
+We can fix this using the <b>#line</b> directive in GLSL and the <b>debug.getinfo</b> function in Lua. Instead of declaring strings directly, we'll need the Lua script to call a function.  We can define this function in a separate file called <b>ShaderFactory.lua</b>:
+
+[lua]
+-- Shader Factory
+function DeclareShader(name, source)
+    local lineNumber = debug.getinfo(2).currentline
+    preamble = "#line " .. lineNumber .. "\n"
+    _G[name] = preamble .. source
+end
+[/lua]
+
+Now our effect file becomes:
+
+[lua]
+-- Vertex Shader
+DeclareShader('MyVertexShader', [[
+in vec4 Position;
+uniform mat4 Projection;
+void main()
+{
+    gl_Position = Projection * Position;
+}]])
+
+-- Fragment Shader
+DeclareShader('MyFragmentShader', [[
+out vec4 FragColor;
+uniform vec4 FillColor;
+void main()
+{
+    FragColor = FillColor;
+}]])
+[/lua]
+
+On the C/C++ side of things, we can load in the strings just as we did before, except that our script's usage of <b>debug.getinfo</b> means that we should load in Lua's debugging library before anything else.  I usually load all the utility libraries in one fell swoop using <b>luaL_openlibs</b>.  So, our C/C++ code now looks like this:
+
+[cpp]
+// Create the Lua context:
+lua_State* L = lua_open();
+
+// Open Lua's utility libraries, including the debug library:
+luaL_openlibs(L);
+
+// Run the script that defines the DeclareShader function:
+luaL_dofile(L, "ShaderFactory.lua");
+
+// Load in the effect files:
+luaL_dofile(L, "BrilligEffect.lua");
+luaL_dofile(L, "SlithyEffect.lua");
+luaL_dofile(L, "ToveEffect.lua");
+
+// As before, extract strings and use them:
+lua_getglobal(L, "MyVertexShader");
+lua_getglobal(L, "MyFragmentShader");
+...
+[/cpp]
+
+<h2>Accomodating Multiple Versions of GLSL</h2>
+
+<b>#line</b> isn't the only directive we're interested in.  One of the great annoyances of OpenGL 3.0+ is the <b>#version</b> directive, which is required if you'd like to use the latest and greatest GLSL syntax.  Ideally our <b>DeclareShader</b> function would somehow know if a given shader is from the OpenGL 2.0 era or the OpenGL 3.0+ era, and prepend the string accordingly.  One idea is passing in the version number as an argument to the <b>DeclareShader</b> function, like this:
+
+[lua]
+-- Shader Factory
+function DeclareShader(name, version, source)
+    local lineNumber = debug.getinfo(2).currentline
+    preamble = "#line " .. lineNumber .. "\n" ..
+               "#version " .. version .. "\n"
+    _G[name] = preamble .. source
+end
+[/lua]
+
+Cool usage of the <b>_G</b> table eh?  It's Lua's built-in table for globals.  Although the above example is a simple solution, it's not always good enough.  Consider a situation where you need to declare multiple versions of the same shader:
+
+[lua]
+-- Vertex Shader for OpenGL 3.0
+DeclareShader('MyVertexShader', 130, [[
+in vec4 Position;
+uniform mat4 Projection;
+void main()
+{
+    gl_Position = Projection * Position;
+}]])
+
+-- Vertex Shader for OpenGL 2.0
+DeclareShader('MyVertexShader', 120, [[
+void main()
+{
+    gl_Position = ftransform();
+}]])
+[/lua]
+
+Unfortunately, the second call to <b>DeclareShader</b> will overwrite the first call.  Also note that the version of the shading language itself isn't the same as the OpenGL API.  The shading language for OpenGL 2.0+ is version 120, and the shading language for 3.0+ is 130.
+
+Ok, so we need to scope the shader names to prevent naming collisions, plus it might be nice to have <b>DeclareShader</b> automatically infer the language version from the API version number.  Lua's tables are great for organizing strings.  The <b>ShaderFactory.lua</b> file now becomes:
+
+[lua]
+VertexShaders = { GL2 = {}, GL3 = {}, GL4 = {}, ES2 = {} }
+GeometryShaders = { GL3 = {}, GL4 = {} }
+FragmentShaders = { GL2 = {}, GL3 = {}, GL4 = {}, ES2 = {} }
+TessControlShaders = { GL4 = {} }
+TessEvaluationShaders = { GL4 = {} }
+ApiVersionToLanguageVersion = { GL2 = 120, GL3 = 130, GL4 = 150 }
+
+function DeclareShader(stage, apiVersion, techniqueName, source)
+    local tableName = stage .. "Shaders"
+    local languageVersion = ApiVersionToLanguageVersion[apiVersion]
+    local lineNumber = debug.getinfo(2).currentline
+    _G[tableName][apiVersion][techniqueName] = 
+        '#version ' .. languageVersion .. '\n' ..
+        '#line ' .. lineNumber .. '\n' .. source
+end
+[/lua]
+
+Shaders for multiple versions of OpenGL can now be bundled into a single file:
+
+[lua]
+-- Vertex Shader for OpenGL 2.0
+DeclareShader('Vertex', 'GL2', 'SnazzyEffect', [[
+void main() { /* FOO */ }
+]])
+
+-- Vertex Shader for OpenGL 3.0
+DeclareShader('Vertex', 'GL3', 'SnazzyEffect', [[
+void main() { /* BAR */ }
+]])
+[/lua]
+
+Now that our shaders are hidden inside nested Lua tables, it's a bit more footwork to access them from the C/C++ side, but we can hide the footwork behind a nice utility function like this:
+
+[cpp]
+const char* GetShaderSource(lua_State* L, const char* techniqueName,
+                            const char* apiVersion, const char* shaderStage)
+{
+    // Append "Shaders" to the shader stage to obtain the table name:
+    char tableName[32];
+    strncpy(tableName, shaderStage, 24);
+    strncat(tableName, "Shaders", 7);
+
+    // Fetch the table from the Lua context and make sure it exists:
+    lua_getglobal(L, tableName);
+    if (!lua_istable(L, -1))
+        return 0;
+
+    // Make sure a table exists for the given API version:
+    lua_pushstring(L, apiVersion);
+    lua_gettable(L, -2);
+    if (!lua_istable(L, -1))
+        return 0;
+
+    // Fetch the shader string:
+    lua_pushstring(L, techniqueName);
+    lua_gettable(L, -2);
+    const char* shaderSource = lua_tostring(L, -1);
+
+    // Clean up the Lua stack and return the string:
+    lua_pop(L, 3);
+    return shaderSource;
+}
+[/cpp]
+
+<h2>A Generalized and Terse Solution</h2>
+
+Revisiting the Lua file, note that shader declaration is still a bit more verbose than a dedicated effect language would be:
+
+[lua light="true"]
+DeclareShader('Vertex', 'GL2', 'SnazzyEffect', 'void main() {}')
+[/lua]
+
+It might be nice to have Lua do some string parsing for us.  Dot separators make for a nice, terse syntax.  This is preferable:
+
+[lua light="true"]
+DeclareShader('Vertex.GL2.SnazzyEffect', 'void main() {}')
+[/lua]
+
+Let's call these dot-seperated strings <i>shader keys</i>.  Couple more observations:
+
+<ul>
+<li>Since we've deemed that each effect corresponds to a single Lua file, we can infer the effect name from the filename of the script itself.</li>
+<li>Instead of pre-declaring a bunch of Lua tables in <b>ShaderFactory.lua</b> for each programmable stage, we can create the tables dynamically.</li>
+</ul>
+
+Okay, so here's our final version of <b>ShaderFactory.lua</b>:
+
+[lua]
+ApiVersionToLanguageVersion = { GL2 = 120, GL3 = 140, GL4 = 150 }
+
+function DeclareShader(shaderKey, shaderSource)
+	
+    -- Prepend the line number directive for proper error messages.
+	local lineNumber = debug.getinfo(2).currentline
+    shaderSource = "#line " .. lineNumber .. "\n" .. shaderSource
+
+    -- Extract the technique name from the fullpath of the Lua script.
+    local fullpath = debug.getinfo(2).source
+    local f, l, technique = string.find(fullpath, "([A-Za-z]+)%.lua")
+
+    -- If a table for this technique does not exist, create it.
+    if _G[technique] == nil then
+        _G[technique] = {}
+    end
+
+    -- Make sure this shader hasn't already been declared.
+    if _G[technique][shaderKey] then
+        error("Shader '" .. shaderKey .. "' has been declared twice.")
+    end
+
+    -- Check if an API version is in the shader key and prepend #version.
+    local pos = 0
+    repeat
+        dummy, pos, token = string.find(shaderKey, "([A-Za-z0-9]+)", pos + 1)
+        if token and ApiVersionToLanguageVersion[token] then
+        	local langVersion = ApiVersionToLanguageVersion[token]
+            shaderSource = "#version " .. langVersion .. "\n" .. shaderSource
+        end
+    until token == nil
+
+    -- Add the shader to Lua's globals.
+    _G[technique][shaderKey] = shaderSource
+
+end
+[/lua]
+
+Now your effect file can look something like this:
+
+[lua]
+------------ Vertex Shader for OpenGL 3.0 ------------
+
+DeclareShader('Vertex.GL3.Erosion', [[
+in vec4 Position;
+void main()
+{
+    gl_Position = Position;
+}
+]])
+
+------------ Fragment Shaders for OpenGL 3.0 ------------
+
+DeclareShader('Fragment.GL3.Erosion.Kirk', [[
+out vec4 FragColor;
+void main()
+{
+    // ...snip...
+}
+]])
+
+DeclareShader('Fragment.GL3.Erosion.Spock', [[
+out vec4 FragColor;
+void main()
+{
+    // ...snip...
+}
+]])
+[/lua]
+
+The above effect contains two fragment shaders but only one vertex shader.  You'll often find that the same vertex shader can be used for multiple fragment shaders, which is why COLLADA and the D3D FX format have so much cross-referencing.  Our solution is a bit more simple: we'll have our C/C++ utility function simply find the shader that has the longest matching shader key.  You'll see what I mean after an example.
+
+Let's define another term before listing out the new C/C++ utility function: an <i>effect key</i> is like a shader key, except that it has the effect name prepended.
+
+[cpp]
+const char* GetShaderSource(lua_State* L, const char* effectKey)
+{
+    // Extract the effect name:
+    const char* targetKey = strchr(effectKey, '.');
+    if (!targetKey++)
+        return 0;
+
+    char effectName[32] = {0};
+    strncpy(effectName, effectKey, targetKey - effectKey - 1);
+
+    // Fetch the table from the Lua context and make sure it exists:
+    lua_getglobal(L, effectName);
+    if (!lua_istable(L, -1))
+    {
+        lua_pop(L, 1);
+
+        // Delay-load the Lua file:
+        char effectPath[64];
+        sprintf(effectPath, "%s.lua", effectName);
+        if (luaL_dofile(L, effectPath))
+            return 0;
+        
+        // If it's still not there, give up!
+        lua_getglobal(L, effectName);
+        if (!lua_istable(L, -1))
+            exit(1);
+    }
+
+    const char* closestMatch = 0;
+    int closestMatchLength = 0;
+
+    int i = lua_gettop(L);
+    lua_pushnil(L);
+    while (lua_next(L, i) != 0)
+    {
+        const char* shaderKey = lua_tostring(L, -2);
+        int shaderKeyLength = strlen(shaderKey);
+
+        // Find the longest shader key that matches the first few letters of the target shader key:
+        if (strstr(targetKey, shaderKey) != 0 && shaderKeyLength > closestMatchLength)
+        {
+            closestMatchLength = shaderKeyLength;
+            closestMatch = lua_tostring(L, -1);
+        }
+
+        lua_pop(L, 1);
+    }
+
+    lua_pop(L, 1);
+
+    return closestMatch;
+}
+[/cpp]
+
+We can use the above utility function like this:
+
+[cpp]
+void main()
+{
+    lua_State* L = lua_open();
+    luaL_openlibs(L);
+    luaL_dofile(L, "ShaderFactory.lua");
+
+    cout << GetShaderSource(L, "MyEffect.Vertex.GL3.Kirk") << endl << endl;
+    cout << GetShaderSource(L, "MyEffect.Fragment.GL3.Kirk") << endl << endl;
+
+    lua_close(L);
+}
+[/cpp]
+
+On line 7, the caller requests a shader from the <b>MyEffect</b> file with a shader key of <b>Vertex.GL3.Kirk</b>.  Since the longest matching shader key is <b>Vertex.GL3</b>, that's what gets returned.  Convenient eh?  Also note that the Lua script for the effect gets delay loaded.
+
+By the way, before I let you go, let me show you a trick for commenting out big swaths of Lua code that have multi-line strings.  Normally you'd use the <b>&#45;&#160;&#45;[[</b> and <b>&#45;&#160;&#45;]]</b> delimiters for multi-line comments, but they don't work if you're commenting out sections that have strings delimited with <b>[[</b> and <b>]]</b>.  Lua allows you to use alternative delimiters by inserting an arbitrary number of equal signs between the square brackets, like this:
+
+[lua]
+--[==[
+DeclareShader('Fragment.GL2.DisabledEffect', [[
+Foo
+]])
+--]==]
+
+DeclareShader('Fragment.GL2.EnabledEffect', [[
+Bar
+]])
+[/lua]
+
+Cool eh?
